@@ -1,0 +1,196 @@
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  body {
+    font-family: 'Segoe UI', Arial, sans-serif;
+    font-size: 14px; color: #1a1a2e;
+    background: #f5f5f7; padding: 20px;
+  }
+  h2 { font-size: 16px; font-weight: 700; margin-bottom: 16px; }
+
+  /* ── Zona de carga ── */
+  .drop-zone {
+    border: 2px dashed #aaa; border-radius: 10px;
+    padding: 24px 20px; text-align: center; background: #fff;
+    cursor: pointer; transition: border-color .2s, background .2s;
+    margin-bottom: 16px;
+  }
+  .drop-zone:hover, .drop-zone.drag-over { border-color: #1a1a2e; background: #eef0ff; }
+  .drop-zone input[type="file"] { display: none; }
+  .drop-zone .icon { font-size: 32px; margin-bottom: 6px; }
+  .drop-zone p { color: #666; font-size: 12px; margin-top: 4px; }
+
+  /* ── Miniatura ── */
+  #thumbnail-wrap {
+    background: #fff; border: 1px solid #ddd; border-radius: 10px;
+    padding: 12px; margin-bottom: 16px;
+    align-items: center; gap: 14px; display: none;
+  }
+  #thumbnail-img {
+    width: 90px; height: 90px; object-fit: contain;
+    border-radius: 6px; background: #1a1a2e; flex-shrink: 0;
+  }
+  .thumb-info strong { font-size: 13px; display: block; margin-bottom: 4px; }
+  .thumb-info span   { font-size: 11px; color: #666; }
+  .thumb-badge {
+    display: inline-block; margin-top: 6px; font-size: 10px;
+    background: #d4edda; color: #155724;
+    border-radius: 4px; padding: 2px 6px; font-weight: 600;
+  }
+
+  /* ── Formulario ── */
+  .form-grid {
+    display: grid; grid-template-columns: 1fr 1fr;
+    gap: 12px; margin-bottom: 14px;
+  }
+  .form-group { display: flex; flex-direction: column; gap: 4px; }
+  .form-group.full-width { grid-column: 1 / -1; }
+
+  label, .field-label {
+    font-size: 11px; font-weight: 600;
+    text-transform: uppercase; color: #555; letter-spacing: 0.4px;
+  }
+  .badge {
+    font-size: 9px; background: #e0e0e0; color: #666;
+    border-radius: 4px; padding: 1px 4px;
+    margin-left: 4px; text-transform: none; font-weight: 400;
+  }
+  .badge.auto   { background: #d4edda; color: #155724; }
+  .badge.manual { background: #fff3cd; color: #856404; }
+
+  input, select {
+    padding: 8px 10px; border: 1px solid #ccc;
+    border-radius: 6px; font-size: 13px; background: #fff;
+    transition: border-color .2s;
+  }
+  input:focus, select:focus { outline: none; border-color: #1a1a2e; }
+  input[readonly] { background: #f0f4f0; color: #444; }
+  .dims-row { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 8px; }
+
+  /* ── Alerta ── */
+  .alert {
+    padding: 9px 12px; border-radius: 6px;
+    font-size: 12px; margin-bottom: 12px; display: none;
+  }
+  .alert.info    { background: #d1ecf1; color: #0c5460; display: block; }
+  .alert.success { background: #d4edda; color: #155724; display: block; }
+  .alert.error   { background: #f8d7da; color: #721c24; display: block; }
+  .alert.warning { background: #fff3cd; color: #856404; display: block; }
+
+  /* ── Multicolor ── */
+  #multicolor-wrap {
+    display: flex; align-items: center; gap: 8px; margin-bottom: 10px;
+  }
+
+  /* ── Unidades ── */
+  .unidades-wrap {
+    background: #f0f4ff; border: 1px solid #c5cae9;
+    border-radius: 8px; padding: 12px; margin-bottom: 14px;
+  }
+  .unidades-row { display: flex; align-items: center; gap: 12px; margin-top: 6px; }
+  .unidades-row input {
+    width: 90px; font-size: 20px; font-weight: 700;
+    text-align: center; border-color: #9fa8da;
+  }
+  .unidades-hint { font-size: 11px; color: #555; line-height: 1.5; }
+
+  /* ── Insumos ── */
+  .insumos-wrap {
+    background: #fffbf0; border: 1px solid #f0e0a0;
+    border-radius: 8px; padding: 12px; margin-bottom: 14px;
+  }
+  .insumos-header {
+    display: flex; align-items: center; margin-bottom: 10px;
+  }
+  .insumo-add-row {
+    display: flex; gap: 8px; align-items: center; margin-bottom: 10px;
+  }
+  .insumo-add-fields {
+    display: grid; grid-template-columns: 1fr 120px; gap: 6px; flex: 1;
+  }
+  .btn-add-insumo {
+    padding: 8px 12px; background: #856404; color: #fff;
+    border: none; border-radius: 6px; font-size: 12px;
+    font-weight: 600; cursor: pointer; white-space: nowrap;
+    transition: background .2s;
+  }
+  .btn-add-insumo:hover { background: #6d5203; }
+
+  /* Fila de insumo agregado */
+  .insumo-item {
+    display: flex; align-items: center; gap: 8px;
+    padding: 6px 8px; background: #fff;
+    border: 1px solid #e8d88a; border-radius: 6px;
+    margin-bottom: 6px; font-size: 12px;
+  }
+  .insumo-item .insumo-nombre { flex: 1; color: #333; }
+  .insumo-item .insumo-precio {
+    font-weight: 600; color: #856404; min-width: 80px; text-align: right;
+  }
+  .insumo-item .insumo-nuevo {
+    font-size: 9px; background: #d4edda; color: #155724;
+    border-radius: 3px; padding: 1px 4px;
+  }
+  .btn-quitar-insumo {
+    background: none; border: none; cursor: pointer;
+    color: #999; font-size: 14px; padding: 0 2px; line-height: 1;
+  }
+  .btn-quitar-insumo:hover { color: #c00; }
+
+  #insumos-subtotal {
+    display: flex; justify-content: space-between;
+    padding: 6px 8px; border-top: 1px dashed #e8d88a;
+    font-size: 12px; font-weight: 600; color: #856404;
+    margin-top: 4px;
+  }
+
+  /* ── Preview costos ── */
+  #preview-costos {
+    background: #fff; border: 1px solid #ddd;
+    border-radius: 8px; padding: 10px 14px;
+    margin-bottom: 14px; display: none;
+  }
+  #preview-costos h3 {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    color: #555; margin-bottom: 8px; letter-spacing: 0.5px;
+  }
+  .costo-row {
+    display: flex; justify-content: space-between;
+    padding: 3px 0; font-size: 12px; border-bottom: 1px solid #f0f0f0;
+  }
+  .costo-row:last-child { border-bottom: none; }
+  .costo-row.total-cama    { font-weight: 700; color: #1a1a2e; font-size: 13px; padding-top: 5px; }
+  .costo-row.divider,
+  .costo-row.divider-insumos {
+    border-top: 2px dashed #c5cae9; border-bottom: none;
+    margin-top: 6px; padding-top: 8px;
+    font-size: 11px; color: #777; font-style: italic;
+  }
+  .costo-row.divider-insumos { border-color: #e8d88a; }
+  .costo-row.costo-unidad  { font-weight: 600; color: #1a1a2e; font-size: 13px; }
+  .costo-row.precio-unidad { font-weight: 700; color: #155724; font-size: 14px; padding-top: 4px; }
+  .costo-row.total-venta   {
+    font-weight: 700; color: #004085; font-size: 13px;
+    background: #e8f4ff; border-radius: 4px; padding: 4px 6px; margin-top: 4px;
+  }
+  .costo-row.insumos-u { color: #856404; font-weight: 600; font-size: 12px; }
+  .costo-row.total-real {
+    font-weight: 700; color: #155724; font-size: 15px; padding-top: 4px;
+  }
+  .costo-row.total-real-cama {
+    font-weight: 700; color: #004085; font-size: 13px;
+    background: #e8f4ff; border-radius: 4px; padding: 4px 6px; margin-top: 4px;
+  }
+
+  /* ── Botones ── */
+  .btn-row { display: flex; gap: 10px; justify-content: flex-end; }
+  button {
+    padding: 10px 20px; border: none; border-radius: 6px;
+    font-size: 13px; font-weight: 600; cursor: pointer; transition: opacity .2s;
+  }
+  button:disabled { opacity: .5; cursor: not-allowed; }
+  .btn-primary   { background: #1a1a2e; color: #fff; }
+  .btn-primary:hover:not(:disabled)   { background: #2d2d4e; }
+  .btn-secondary { background: #e0e0e0; color: #333; }
+  .btn-secondary:hover:not(:disabled) { background: #ccc; }
+</style>

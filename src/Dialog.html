@@ -1,0 +1,141 @@
+<!DOCTYPE html>
+<html>
+<head>
+  <meta charset="UTF-8">
+  <base target="_top">
+  <?!= include('Styles') ?>
+</head>
+<body>
+
+  <h2>🖨️ Importar datos de Creality Print 7.x</h2>
+
+  <!-- Zona de carga -->
+  <div class="drop-zone" id="dropZone" onclick="document.getElementById('fileInput').click()">
+    <div class="icon">📄</div>
+    <strong>Arrastra tu archivo .gcode aquí</strong>
+    <p>o haz clic para seleccionarlo</p>
+    <input type="file" id="fileInput" accept=".gcode,.gc,.gco">
+  </div>
+
+  <!-- Miniatura -->
+  <div id="thumbnail-wrap">
+    <img id="thumbnail-img" src="" alt="Miniatura">
+    <div class="thumb-info">
+      <strong>Miniatura del modelo</strong>
+      <span>Extraída del G-code · Se guardará en Google Drive</span>
+      <span class="thumb-badge">✅ Imagen lista</span>
+    </div>
+  </div>
+
+  <div class="alert" id="alertBox"></div>
+
+  <!-- Formulario principal -->
+  <div class="form-grid">
+
+    <div class="form-group full-width">
+      <label>Nombre de la pieza <span class="badge auto">del archivo · editable</span></label>
+      <input type="text" id="nombrePieza" placeholder="Carga un G-code para autocompletar">
+    </div>
+
+    <div class="form-group">
+      <label>Impresora <span class="badge auto">auto</span></label>
+      <select id="impresora">
+        <option value="Ender 3 S1 Pro">Ender 3 S1 Pro</option>
+        <option value="Creality HI">Creality HI</option>
+      </select>
+    </div>
+
+    <div class="form-group">
+      <label>Tiempo de impresión <span class="badge auto">auto</span></label>
+      <input type="text" id="tiempoTexto" placeholder="Ej: 19h 09m" readonly>
+    </div>
+
+    <div class="form-group full-width">
+      <label>Filamento (gramos) <span class="badge auto">auto</span></label>
+      <input type="number" id="filamentoGramos"
+             placeholder="Ver laminador antes de exportar" step="0.1" min="0">
+    </div>
+
+    <div class="form-group full-width">
+      <label>Dimensiones <span class="badge auto">auto</span></label>
+      <div class="dims-row">
+        <input type="number" id="anchoMm" placeholder="Ancho (X)" step="0.1" min="0">
+        <input type="number" id="largoMm" placeholder="Largo (Y)" step="0.1" min="0">
+        <input type="number" id="altoMm"  placeholder="Alto  (Z)" step="0.1" min="0">
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Color -->
+  <div id="multicolor-wrap">
+    <span class="field-label">Color</span>
+    <span id="badgeMulticolor" class="badge">Carga un G-code</span>
+  </div>
+
+  <!-- Unidades por cama -->
+  <div class="unidades-wrap">
+    <label>📦 Unidades por cama <span class="badge auto">auto</span></label>
+    <div class="unidades-row">
+      <input type="number" id="unidadesPorCama" value="1" min="1" step="1">
+      <div class="unidades-hint" id="hintUnidades">
+        Carga un G-code para detectar automáticamente.
+      </div>
+    </div>
+  </div>
+
+  <!-- ── Insumos ── -->
+  <div class="insumos-wrap">
+    <div class="insumos-header">
+      <span class="field-label">📦 Insumos adicionales</span>
+      <span class="badge" style="margin-left:4px;">por unidad</span>
+    </div>
+
+    <!-- Fila para agregar insumo -->
+    <div class="insumo-add-row">
+      <div class="insumo-add-fields">
+        <input type="text"   id="insumoNombre" placeholder="Nombre (catálogo o libre)" list="catalogoList" autocomplete="off">
+        <datalist id="catalogoList"></datalist>
+        <input type="number" id="insumoPrecio" placeholder="Precio/u" min="0" step="100">
+      </div>
+      <button class="btn-add-insumo" onclick="agregarInsumo()">+ Agregar</button>
+    </div>
+
+    <!-- Lista de insumos agregados -->
+    <div id="insumos-lista"></div>
+
+    <!-- Subtotal insumos -->
+    <div id="insumos-subtotal" style="display:none;">
+      <span>Total insumos/u</span>
+      <span id="insumos-subtotal-valor"></span>
+    </div>
+  </div>
+
+  <!-- Preview de costos -->
+  <div id="preview-costos">
+    <h3>Resumen de costos</h3>
+    <div class="costo-row"><span>Filamento</span><span id="pc-filamento"></span></div>
+    <div class="costo-row"><span>Energía</span><span id="pc-energia"></span></div>
+    <div class="costo-row"><span>Subtotal</span><span id="pc-subtotal"></span></div>
+    <div class="costo-row"><span>Mantenimiento (5%)</span><span id="pc-mantenimiento"></span></div>
+    <div class="costo-row total-cama"><span>Total costo (cama)</span><span id="pc-total-cama"></span></div>
+    <div class="costo-row divider"><span id="pc-divider-label"></span><span></span></div>
+    <div class="costo-row costo-unidad"><span>Costo impresión/u</span><span id="pc-costo-unidad"></span></div>
+    <div class="costo-row divider-insumos" id="divider-insumos" style="display:none;"><span>+ insumos al costo</span><span></span></div>
+    <div class="costo-row insumos-u" id="row-insumos-u" style="display:none;"><span>Insumos/u</span><span id="pc-insumos-u"></span></div>
+    <div class="costo-row total-real" id="row-total-real" style="display:none;"><span>Costo total/u</span><span id="pc-total-real"></span></div>
+    <div class="costo-row precio-unidad"><span id="pc-precio-unidad-label">💰 Precio de venta/u</span><span id="pc-precio-unidad"></span></div>
+    <div class="costo-row total-real-cama" id="row-total-real-cama" style="display:none;"><span>Total venta con insumos</span><span id="pc-total-real-cama"></span></div>
+    <div class="costo-row total-venta"><span>Total venta (cama)</span><span id="pc-total-venta"></span></div>
+  </div>
+
+  <!-- Botones -->
+  <div class="btn-row">
+    <button class="btn-secondary" onclick="limpiarFormulario()">Limpiar</button>
+    <button class="btn-primary" id="btnGuardar" onclick="guardar()" disabled>Guardar en hoja</button>
+  </div>
+
+  <?!= include('Script') ?>
+
+</body>
+</html>

@@ -1,0 +1,19 @@
+# Credenciales de clasp — NUNCA subir (contienen tokens OAuth de tu cuenta Google)
+.clasprc.json
+*.clasprc.json
+
+# Node
+node_modules/
+npm-debug.log*
+yarn-error.log*
+
+# Sistema operativo
+Thumbs.db
+desktop.ini
+.DS_Store
+
+# Temporales y descargas locales
+*.log
+*.tmp
+/tmp/
+/gcode-pruebas/

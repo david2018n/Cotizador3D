@@ -1,0 +1,6 @@
+# Apps Script trabaja con LF; forzarlo evita que clasp push suba archivos
+# completos solo por cambio de finales de línea en Windows.
+* text=auto eol=lf
+*.png binary
+*.jpg binary
+*.gcode -text
