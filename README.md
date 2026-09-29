@@ -22,7 +22,7 @@ Todo el código del proyecto Apps Script vive en `src/`. La raíz guarda configu
 | `src/Config.js` | Lee las tarifas de la hoja `Parámetros`; valores por defecto y validación |
 | `src/Calculadora.js` | Lógica de negocio: consumo por impresora y cálculo de costos |
 | `src/Hoja.js` | Acceso a Sheets: encabezados, IDs, catálogo de insumos, escritura de filas |
-| `src/Drive.js` | Guarda la miniatura PNG en Drive y devuelve la URL pública |
+| `src/Drive.js` | Guarda la miniatura PNG en Drive, devuelve su URL pública y limpia las huérfanas |
 | `src/Dialog.html` | Estructura del diálogo modal (formulario + preview de costos) |
 | `src/Script.html` | JS del cliente: parser de G-code, preview en vivo, envío al servidor |
 | `src/Styles.html` | CSS del diálogo |
@@ -118,8 +118,11 @@ replica esta misma cadena, de modo que el preview y lo que termina en la hoja co
 La columna `kWh total` se agregó cuando la hoja ya tenía cotizaciones. `Hoja._migrarCotizaciones()`
 la inserta en la posición 12 y normaliza el encabezado; corre sola al inicializar o al guardar,
 es idempotente y no destructiva —`insertColumnBefore` desplaza las celdas, así que las
-cotizaciones anteriores conservan sus valores y solo quedan con la celda de kWh vacía, que se
-completa con la acción de menú descrita más abajo.
+cotizaciones anteriores conservan sus valores y solo quedan con la celda de kWh vacía.
+
+Las 45 cotizaciones históricas ya se completaron con una función puntual que reconstruía el kWh
+como `Costo energía ÷ tarifa` (commit `664a0c1`, retirada una vez usada). Si hiciera falta
+repetirlo, está en el historial de git.
 
 Si el encabezado no corresponde ni al esquema anterior ni al actual, **lanza en vez de escribir**:
 es preferible que falle el guardado a que los valores caigan en columnas equivocadas.
@@ -128,24 +131,28 @@ Las posiciones de columna (`COLS_MONEDA_COT`, `COLS_DESTACADAS`, miniatura, kWh)
 array `ENC_COTIZACIONES`, no van a mano, para que agregar o mover una columna no vuelva a
 desfasar los formatos.
 
-### Relleno del kWh histórico
+## Limpieza de miniaturas huérfanas
 
-`🖨️ Cotizador 3D → Rellenar kWh de cotizaciones antiguas` completa la columna de las
-cotizaciones guardadas antes de que existiera. Solo escribe en celdas vacías, se puede repetir
-y al terminar informa cuántas rellenó, cuáles omitió y cuáles conviene revisar.
+Al guardar una cotización, su miniatura se sube a la carpeta de Drive
+**`Cotizador3D_Miniaturas`** y la celda queda con un `=IMAGE("…")` que la apunta. Si después se
+borra la fila, el archivo se queda en Drive sin que nada lo enlace.
 
-Reconstruye el kWh como **`Costo energía ÷ tarifa`**, no desde la impresora y el tiempo. El
-motivo: la hoja guarda el tiempo redondeado a minutos —`19h 09m` pudo haber sido 19h 08m 34s—,
-así que recalcularlo daría un kWh que no cuadra con el dinero de su propia fila. Dividir el costo
-reproduce el kWh original con un error de ±0,5/tarifa kWh y deja la columna consistente:
-`kWh × tarifa = Costo energía`, al peso.
+`🖨️ Cotizador 3D → Limpiar miniaturas huérfanas` los recoge:
 
-La impresora y el tiempo sí se usan como **comprobación cruzada**: las filas cuyo kWh
-reconstruido se aparte más de 0,01 kWh del estimado se reportan sin modificarse, porque indican
-una edición manual o un dato raro.
+1. `Hoja.textoDelLibro()` junta **fórmulas y valores visibles de todas las hojas** en un solo
+   string. Las fórmulas hacen falta porque el enlace vive dentro de `=IMAGE(...)`, cuyo valor
+   visible está vacío; los valores visibles, porque un enlace también puede estar pegado como
+   texto en cualquier celda.
+2. `Drive.analizarMiniaturas()` recorre la carpeta y, **por cada archivo, busca su ID dentro de
+   ese texto**. La pregunta se hace en ese sentido —y no extrayendo URLs del documento— para que
+   dé igual el formato del enlace (`uc?export=view&id=`, `/file/d/…`, o pegado a mano). Los IDs
+   de Drive son lo bastante largos como para que no haya coincidencias falsas.
+3. Antes de borrar nada se muestra **la lista y se pide confirmación**.
+4. Lo aceptado va a la **papelera de Drive** con `setTrashed(true)`, no a un borrado definitivo,
+   así que se puede restaurar.
 
-> Ejecútalo **antes** de cambiar `energiaPorKwh` en la hoja `Parámetros`: usa la tarifa vigente
-> para dividir, y esas filas se calcularon con la de entonces.
+Se dejan intactos los archivos que no son imágenes (se reportan aparte) y los que ya estaban en
+la papelera. Si un archivo no se puede borrar, se informa y la limpieza sigue con los demás.
 
 ## Desarrollo
 

@@ -8,7 +8,7 @@ function onOpen() {
     .addItem("Importar G-code...", "mostrarDialogo")
     .addSeparator()
     .addItem("Inicializar hojas", "inicializarHojas")
-    .addItem("Rellenar kWh de cotizaciones antiguas", "rellenarKwhHistorico")
+    .addItem("Limpiar miniaturas huérfanas", "limpiarMiniaturasHuerfanas")
     .addToUi();
 }
 
@@ -31,29 +31,58 @@ function inicializarHojas() {
   );
 }
 
-// Mantenimiento puntual: completa el kWh de las cotizaciones guardadas antes
-// de que existiera esa columna. Solo toca celdas vacías, se puede repetir.
-function rellenarKwhHistorico() {
-  const tarifaEnergia = Config.tarifas().energiaPorKwh;
-  const r = Hoja.rellenarKwhHistorico(tarifaEnergia);
+/**
+ * Mantenimiento: envía a la papelera de Drive las miniaturas de la carpeta
+ * "Cotizador3D_Miniaturas" que ya no estén enlazadas en ninguna celda del
+ * documento —las que quedaron sueltas al borrar cotizaciones.
+ *
+ * Pide confirmación mostrando la lista antes de borrar nada, y usa la papelera
+ * en vez de un borrado definitivo para que se puedan recuperar.
+ */
+function limpiarMiniaturasHuerfanas() {
+  const ui = SpreadsheetApp.getUi();
+  const analisis = Drive.analizarMiniaturas(Hoja.textoDelLibro());
 
-  const lineas = [
-    `Revisadas: ${r.revisadas} cotizaciones`,
-    `✅ Rellenadas: ${r.rellenadas}`,
-    `• Ya tenían kWh: ${r.yaTenian}`
-  ];
-
-  if (r.omitidas.length) {
-    lineas.push("", `⚠️ Omitidas (${r.omitidas.length}):`, ...r.omitidas.slice(0, 10));
-    if (r.omitidas.length > 10) lineas.push(`…y ${r.omitidas.length - 10} más`);
+  if (analisis.total === 0) {
+    ui.alert(`No hay miniaturas en la carpeta "${Drive.CARPETA}".`);
+    return;
   }
-  if (r.discrepancias.length) {
-    lineas.push("", `⚠️ Para revisar (${r.discrepancias.length}):`, ...r.discrepancias.slice(0, 10));
-    if (r.discrepancias.length > 10) lineas.push(`…y ${r.discrepancias.length - 10} más`);
+  if (analisis.huerfanas.length === 0) {
+    ui.alert(
+      `Nada que borrar.\n\n` +
+      `Las ${analisis.referenciadas} miniaturas de la carpeta están enlazadas en el documento.`
+    );
+    return;
   }
 
-  lineas.push("", `Reconstruido como Costo energía ÷ $${tarifaEnergia}/kWh.`);
-  SpreadsheetApp.getUi().alert(lineas.join("\n"));
+  const MUESTRA = 15;
+  const lista = analisis.huerfanas.slice(0, MUESTRA).map(h => `• ${h.nombre}`);
+  if (analisis.huerfanas.length > MUESTRA) {
+    lista.push(`…y ${analisis.huerfanas.length - MUESTRA} más`);
+  }
+
+  const respuesta = ui.alert(
+    "Limpiar miniaturas huérfanas",
+    `${analisis.huerfanas.length} de ${analisis.total} miniaturas ya no están enlazadas ` +
+    `en ninguna celda del documento:\n\n${lista.join("\n")}\n\n` +
+    `Se enviarán a la papelera de Drive, de donde se pueden recuperar. ¿Continuar?`,
+    ui.ButtonSet.YES_NO
+  );
+  if (respuesta !== ui.Button.YES) {
+    ui.alert("Cancelado. No se borró ninguna miniatura.");
+    return;
+  }
+
+  const r = Drive.enviarAPapelera(analisis.huerfanas);
+  const lineas = [`✅ ${r.enviadas} miniaturas enviadas a la papelera de Drive.`];
+  if (analisis.omitidas.length) {
+    lineas.push("", `Se dejaron ${analisis.omitidas.length} archivos que no son imágenes:`,
+                ...analisis.omitidas.slice(0, 10));
+  }
+  if (r.errores.length) {
+    lineas.push("", `⚠️ No se pudieron borrar ${r.errores.length}:`, ...r.errores.slice(0, 10));
+  }
+  ui.alert(lineas.join("\n"));
 }
 
 // ── Llamados desde el diálogo ─────────────────────────────────
