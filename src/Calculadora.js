@@ -10,6 +10,16 @@ const Calculadora = (() => {
   };
 
   /**
+   * Energía total de una impresión: el calentamiento, que no está incluido en
+   * el tiempo que reporta el laminador, más el consumo durante la impresión.
+   */
+  function kwh(impresora, tiempoHoras) {
+    const config = IMPRESORAS[impresora];
+    if (!config) throw new Error(`Impresora desconocida: ${impresora}`);
+    return config.kwhCalentamiento + (config.wImpresion / 1000) * tiempoHoras;
+  }
+
+  /**
    * @param datos    Datos de la pieza enviados por el diálogo.
    * @param tarifas  Tarifas de Config.tarifas(). Si se omite, se leen de la
    *                 hoja "Parámetros" (útil al llamar desde el editor).
@@ -17,13 +27,8 @@ const Calculadora = (() => {
   function calcular(datos, tarifas) {
     const TARIFAS = tarifas || Config.tarifas();
 
-    const config = IMPRESORAS[datos.impresora];
-    if (!config) throw new Error(`Impresora desconocida: ${datos.impresora}`);
-
     const unidades = datos.unidadesPorCama || 1;
-
-    const kwhLabor       = (config.wImpresion / 1000) * datos.tiempoHoras;
-    const kwhTotal       = config.kwhCalentamiento + kwhLabor;
+    const kwhTotal = kwh(datos.impresora, datos.tiempoHoras);
     const costoFilamento = datos.filamentoGramos * TARIFAS.filamentoPorGramo;
     const costoEnergia   = kwhTotal * TARIFAS.energiaPorKwh;
     const subtotal       = costoFilamento + costoEnergia;
@@ -55,6 +60,6 @@ const Calculadora = (() => {
     return insumos.reduce((suma, i) => suma + (parseFloat(i.precioUnidad) || 0), 0);
   }
 
-  return { calcular, IMPRESORAS };
+  return { calcular, kwh, IMPRESORAS };
 
 })();

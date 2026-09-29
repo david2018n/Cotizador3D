@@ -289,16 +289,112 @@ const Hoja = (() => {
     });
   }
 
+  // ── Relleno del kWh histórico ─────────────────────────────
+
+  /**
+   * Rellena la columna "kWh total" de las cotizaciones guardadas antes de que
+   * esa columna existiera. Solo toca celdas vacías.
+   *
+   * El kWh se reconstruye como `Costo energía ÷ tarifaEnergia`, no desde la
+   * impresora y el tiempo: la hoja guarda el tiempo redondeado a minutos
+   * ("19h 09m" pudo ser 19h 08m 34s), así que recalcularlo daría un kWh que no
+   * cuadra con el dinero de su propia fila. Dividir el costo reproduce el kWh
+   * original con un error de ±0,5/tarifa kWh y deja la columna consistente:
+   * kWh × tarifa = Costo energía, al peso.
+   *
+   * La impresora y el tiempo se usan como comprobación cruzada: las filas cuyo
+   * kWh reconstruido se aleje del estimado se reportan sin modificarse.
+   *
+   * @param tarifaEnergia  $/kWh con la que se calcularon esas filas.
+   */
+  function rellenarKwhHistorico(tarifaEnergia) {
+    if (!isFinite(tarifaEnergia) || tarifaEnergia <= 0) {
+      throw new Error(`Tarifa de energía inválida: ${tarifaEnergia}`);
+    }
+
+    const hoja = _obtener(NOMBRES.cotizaciones);
+    _migrarCotizaciones(hoja);                 // la columna tiene que existir
+
+    const resumen = { revisadas: 0, rellenadas: 0, yaTenian: 0, omitidas: [], discrepancias: [] };
+    const ultima = hoja.getLastRow();
+    if (ultima <= 1) return resumen;
+
+    const iImpresora = COL("Impresora") - 1;
+    const iTiempo    = COL("Tiempo impresión") - 1;
+    const iEnergia   = COL("Costo energía") - 1;
+    const iKwh       = COL_KWH_NUM - 1;
+
+    const filas = hoja.getRange(2, 1, ultima - 1, ENC_COTIZACIONES.length).getValues();
+    resumen.revisadas = filas.length;
+
+    const columna = filas.map((fila, i) => {
+      const numFila = i + 2;
+      const actual  = fila[iKwh];
+
+      if (typeof actual === "number" && actual > 0) {
+        resumen.yaTenian++;
+        return [actual];
+      }
+
+      const costoEnergia = typeof fila[iEnergia] === "number"
+        ? fila[iEnergia]
+        : parseFloat(String(fila[iEnergia]).replace(/[^\d.,-]/g, "").replace(",", "."));
+
+      if (!isFinite(costoEnergia) || costoEnergia <= 0) {
+        resumen.omitidas.push(`fila ${numFila}: sin costo de energía legible`);
+        return [actual === undefined ? "" : actual];
+      }
+
+      const reconstruido = costoEnergia / tarifaEnergia;
+
+      const horas = _parsearTiempoAHoras(String(fila[iTiempo]));
+      if (horas > 0) {
+        try {
+          const estimado = Calculadora.kwh(String(fila[iImpresora]).trim(), horas);
+          if (Math.abs(estimado - reconstruido) > 0.01) {
+            resumen.discrepancias.push(
+              `fila ${numFila}: ${reconstruido.toFixed(4)} reconstruido vs ` +
+              `${estimado.toFixed(4)} según ${fila[iImpresora]} y ${fila[iTiempo]}`
+            );
+          }
+        } catch (e) {
+          resumen.omitidas.push(`fila ${numFila}: ${e.message} (se rellenó igual)`);
+        }
+      }
+
+      resumen.rellenadas++;
+      return [reconstruido];
+    });
+
+    const rango = hoja.getRange(2, COL_KWH_NUM, columna.length, 1);
+    rango.setValues(columna);
+    rango.setNumberFormat("0.0000");
+
+    return resumen;
+  }
+
   // ── Helpers ───────────────────────────────────────────────
+
+  // Lee "19h 09m", "1d 7h 45m 35s", "41h 60m" → horas decimales
+  function _parsearTiempoAHoras(texto) {
+    if (!texto) return 0;
+    const parte = re => { const m = texto.match(re); return m ? parseInt(m[1], 10) : 0; };
+    return parte(/(\d+)\s*d/i) * 24
+         + parte(/(\d+)\s*h/i)
+         + parte(/(\d+)\s*m/i) / 60
+         + parte(/(\d+)\s*s/i) / 3600;
+  }
 
   function _obtener(nombre) {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
     return ss.getSheetByName(nombre) || ss.insertSheet(nombre);
   }
 
+  // Se redondea a minutos antes de partir, o 41,999 h saldría como "41h 60m"
   function _formatearTiempo(horas) {
-    const h = Math.floor(horas);
-    const m = Math.round((horas - h) * 60);
+    const totalMin = Math.round(horas * 60);
+    const h = Math.floor(totalMin / 60);
+    const m = totalMin % 60;
     return `${h}h ${m.toString().padStart(2, "0")}m`;
   }
 
@@ -308,7 +404,8 @@ const Hoja = (() => {
     leerCatalogoInsumos,
     procesarInsumos,
     agregarFilaCotizacion,
-    agregarFilasInsumos
+    agregarFilasInsumos,
+    rellenarKwhHistorico
   };
 
 })();

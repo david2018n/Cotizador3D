@@ -34,8 +34,7 @@ Todo el código del proyecto Apps Script vive en `src/`. La raíz guarda configu
              · thumbnail   ; thumbnail begin WxH … end   → base64 PNG
              · tiempo      ; estimated printing time (normal mode) = …
              ·             ;TIME_ELAPSED:…                (fallback)
-             · filamento   ; filament used [g] = …
-             · costo real  ; total filament cost = …     (si existe, manda sobre $/g)
+             · filamento   ; filament used [g] = …      (suma los carretes en multicolor)
              · dimensiones ; MINX/MAXX/MINY/MAXY/MINZ/MAXZ
              · objetos     ; printing object <nombre> id:N
              · multicolor  líneas T0/T1/… (más de una herramienta)
@@ -84,19 +83,26 @@ Sigue en `src/Calculadora.js` (`IMPRESORAS`), aún no parametrizable:
 | Ender 3 S1 Pro | 0.0360 kWh | 152 W |
 | Creality HI | 0.0288 kWh | 180 W |
 
+El calentamiento no está incluido en el tiempo que reporta el laminador, por eso se suma aparte.
+
+### Cadena de cálculo
+
 ```
 kWh          = kwhCalentamiento + (wImpresion / 1000) × tiempoHoras
-filamento    = gramos × 80
-energía      = kWh × 770
+filamento    = gramos × filamentoPorGramo
+energía      = kWh × energiaPorKwh
 subtotal     = filamento + energía
-mantenimiento= subtotal × 0.05
+mantenimiento= subtotal × mantenimientoPct
 totalCama    = subtotal + mantenimiento
 costoImpr/u  = totalCama / piezasEnCama
 insumos/u    = Σ precio unitario de los insumos
 costoTotal/u = costoImpr/u + insumos/u
-precioVenta/u= costoTotal/u × 3.0
+precioVenta/u= costoTotal/u × multiplicadorVenta
 totalVenta   = precioVenta/u × piezasEnCama
 ```
+
+Todo se calcula a precisión completa y **solo se redondea al mostrar o al guardar**. El diálogo
+replica esta misma cadena, de modo que el preview y lo que termina en la hoja coinciden al peso.
 
 ## Hojas de cálculo
 
@@ -112,8 +118,8 @@ totalVenta   = precioVenta/u × piezasEnCama
 La columna `kWh total` se agregó cuando la hoja ya tenía cotizaciones. `Hoja._migrarCotizaciones()`
 la inserta en la posición 12 y normaliza el encabezado; corre sola al inicializar o al guardar,
 es idempotente y no destructiva —`insertColumnBefore` desplaza las celdas, así que las
-cotizaciones anteriores conservan sus valores y solo quedan con la celda de kWh vacía (ese kWh
-es recalculable desde `Impresora` y `Tiempo impresión`).
+cotizaciones anteriores conservan sus valores y solo quedan con la celda de kWh vacía, que se
+completa con la acción de menú descrita más abajo.
 
 Si el encabezado no corresponde ni al esquema anterior ni al actual, **lanza en vez de escribir**:
 es preferible que falle el guardado a que los valores caigan en columnas equivocadas.
@@ -121,6 +127,25 @@ es preferible que falle el guardado a que los valores caigan en columnas equivoc
 Las posiciones de columna (`COLS_MONEDA_COT`, `COLS_DESTACADAS`, miniatura, kWh) se derivan del
 array `ENC_COTIZACIONES`, no van a mano, para que agregar o mover una columna no vuelva a
 desfasar los formatos.
+
+### Relleno del kWh histórico
+
+`🖨️ Cotizador 3D → Rellenar kWh de cotizaciones antiguas` completa la columna de las
+cotizaciones guardadas antes de que existiera. Solo escribe en celdas vacías, se puede repetir
+y al terminar informa cuántas rellenó, cuáles omitió y cuáles conviene revisar.
+
+Reconstruye el kWh como **`Costo energía ÷ tarifa`**, no desde la impresora y el tiempo. El
+motivo: la hoja guarda el tiempo redondeado a minutos —`19h 09m` pudo haber sido 19h 08m 34s—,
+así que recalcularlo daría un kWh que no cuadra con el dinero de su propia fila. Dividir el costo
+reproduce el kWh original con un error de ±0,5/tarifa kWh y deja la columna consistente:
+`kWh × tarifa = Costo energía`, al peso.
+
+La impresora y el tiempo sí se usan como **comprobación cruzada**: las filas cuyo kWh
+reconstruido se aparte más de 0,01 kWh del estimado se reportan sin modificarse, porque indican
+una edición manual o un dato raro.
+
+> Ejecútalo **antes** de cambiar `energiaPorKwh` en la hoja `Parámetros`: usa la tarifa vigente
+> para dividir, y esas filas se calcularon con la de entonces.
 
 ## Desarrollo
 
@@ -155,12 +180,10 @@ carpeta temporal y compara con `sha256sum` contra `src/`.
 2. **La URL de miniatura** es del tipo `drive.google.com/uc?export=view&id=…`; Google ha ido
    restringiendo ese formato para incrustar imágenes. Si las miniaturas dejan de verse, es el
    primer sospechoso.
-3. **El `kWh total` de las cotizaciones anteriores a la migración está vacío.** Es recalculable
-   desde `Impresora` y `Tiempo impresión` si alguna vez se quiere rellenar hacia atrás.
-4. **Cosmético:** el `Precio venta/u` redondeado multiplicado por las piezas en cama puede
+3. **Cosmético:** el `Precio venta/u` redondeado multiplicado por las piezas en cama puede
    diferir del `Total venta (cama)` en uno o dos pesos. Es consecuencia de redondear para
    mostrar; el total es el valor correcto.
-5. **El calentamiento de la Creality HI** está declarado como 0.0288 kWh, mientras que
+4. **El calentamiento de la Creality HI** está declarado como 0.0288 kWh, mientras que
    1150 W × 1,5 min dan 0.02875. Diferencia: $0,04. El código sigue el número de la
    especificación; si algún día se parametrizan las impresoras conviene guardar W y minutos y
    derivar el kWh.
@@ -189,6 +212,10 @@ carpeta temporal y compara con `sha256sum` contra `src/`.
   en vez de `Precio venta/u` y `Total venta`), off-by-one respecto a su propio comentario.
 
 - **`A1` decía `Hola`** en lugar de `ID`. La migración normaliza todo el encabezado.
+
+- **`_formatearTiempo` producía `41h 60m`.** Partía las horas antes de redondear los minutos, así
+  que 41,999 h salía como `41h 60m` en vez de `42h 00m` — hay una fila así en la hoja. Corregido
+  también en `_segundosATexto` del cliente, que tenía el mismo patrón.
 
 - **Los kWh no se mostraban en ninguna parte**, pese a que la especificación los pide con 4
   decimales. Ahora están como columna en `Cotizaciones` y como detalle de la fila de energía en

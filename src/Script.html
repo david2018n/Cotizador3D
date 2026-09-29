@@ -504,9 +504,11 @@ function _formatearNumero(n) {
   return Number(Number(n).toFixed(2)).toLocaleString("es-CO");
 }
 
+// Se redondea a minutos antes de partir, o 3599 s saldría como "0h 60m"
 function _segundosATexto(seg) {
-  const h = Math.floor(seg / 3600);
-  const m = Math.round((seg % 3600) / 60);
+  const totalMin = Math.round(seg / 60);
+  const h = Math.floor(totalMin / 60);
+  const m = totalMin % 60;
   return `${h}h ${m.toString().padStart(2, "0")}m`;
 }
 

@@ -8,6 +8,7 @@ function onOpen() {
     .addItem("Importar G-code...", "mostrarDialogo")
     .addSeparator()
     .addItem("Inicializar hojas", "inicializarHojas")
+    .addItem("Rellenar kWh de cotizaciones antiguas", "rellenarKwhHistorico")
     .addToUi();
 }
 
@@ -28,6 +29,31 @@ function inicializarHojas() {
     `✅ Hojas inicializadas correctamente.\n\n` +
     `Las tarifas se editan en la hoja "${Config.HOJA}", columna Valor.`
   );
+}
+
+// Mantenimiento puntual: completa el kWh de las cotizaciones guardadas antes
+// de que existiera esa columna. Solo toca celdas vacías, se puede repetir.
+function rellenarKwhHistorico() {
+  const tarifaEnergia = Config.tarifas().energiaPorKwh;
+  const r = Hoja.rellenarKwhHistorico(tarifaEnergia);
+
+  const lineas = [
+    `Revisadas: ${r.revisadas} cotizaciones`,
+    `✅ Rellenadas: ${r.rellenadas}`,
+    `• Ya tenían kWh: ${r.yaTenian}`
+  ];
+
+  if (r.omitidas.length) {
+    lineas.push("", `⚠️ Omitidas (${r.omitidas.length}):`, ...r.omitidas.slice(0, 10));
+    if (r.omitidas.length > 10) lineas.push(`…y ${r.omitidas.length - 10} más`);
+  }
+  if (r.discrepancias.length) {
+    lineas.push("", `⚠️ Para revisar (${r.discrepancias.length}):`, ...r.discrepancias.slice(0, 10));
+    if (r.discrepancias.length > 10) lineas.push(`…y ${r.discrepancias.length - 10} más`);
+  }
+
+  lineas.push("", `Reconstruido como Costo energía ÷ $${tarifaEnergia}/kWh.`);
+  SpreadsheetApp.getUi().alert(lineas.join("\n"));
 }
 
 // ── Llamados desde el diálogo ─────────────────────────────────
