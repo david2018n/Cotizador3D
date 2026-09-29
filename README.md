@@ -130,23 +130,48 @@ replica esta misma cadena, de modo que el preview y lo que termina en la hoja co
 `Inicializar hojas` (menú 🖨️ Cotizador 3D) crea cuatro hojas:
 
 - **Parámetros** — las tarifas. `Clave · Descripción · Valor · Unidad`; solo se edita `Valor`.
-- **Cotizaciones** — una fila por cotización, 23 columnas (ID, miniatura, datos de la pieza, kWh total con 4 decimales, desglose de costos, fecha).
+- **Cotizaciones** — una fila por cotización, 24 columnas (ID, miniatura, datos de la pieza, kWh total con 4 decimales, desglose de costos, precio real, fecha).
 - **Insumos** — catálogo `ID · Nombre · Precio unitario`. Se alimenta solo: si escribes un insumo nuevo en el diálogo, se crea; si cambias el precio de uno existente, se actualiza.
 - **Cotizaciones_Insumos** — detalle N:N entre cotizaciones e insumos.
 
+### `Precio real/u` — la única columna que se llena a mano
+
+Va justo después de `Precio venta/u` y guarda el valor al que **de verdad** se vendió la
+unidad, cuando no es el sugerido: por acuerdo con el cliente, o porque la pieza vale más en
+el mercado de lo que da el cálculo.
+
+La app **no escribe nada ahí**. Nace vacía a propósito, para que un valor en esa celda
+signifique siempre una decisión tomada, y no un valor por defecto que nadie revisó. Vacío =
+todavía no hay precio acordado.
+
+Se distingue a la vista: encabezado ámbar en vez del verde de los totales calculados, celdas
+con fondo crema aunque estén vacías, y una nota en el encabezado que explica para qué es.
+Lleva formato de moneda como el resto del bloque de dinero.
+
 ### Migración del esquema de Cotizaciones
 
-La columna `kWh total` se agregó cuando la hoja ya tenía cotizaciones. `Hoja._migrarCotizaciones()`
-la inserta en la posición 12 y normaliza el encabezado; corre sola al inicializar o al guardar,
-es idempotente y no destructiva —`insertColumnBefore` desplaza las celdas, así que las
-cotizaciones anteriores conservan sus valores y solo quedan con la celda de kWh vacía.
+`Hoja._migrarCotizaciones()` compara la fila 1 con `ENC_COTIZACIONES` e inserta las columnas que
+falten, cada una en su posición. Es **genérica**: cada vez que el esquema gane una columna, las
+hojas existentes se ponen al día solas sin añadir un caso más. Corre al inicializar y antes de
+cada guardado, y es idempotente.
 
-Las 45 cotizaciones históricas ya se completaron con una función puntual que reconstruía el kWh
+No es destructiva: `insertColumnBefore` desplaza las celdas, así que las cotizaciones anteriores
+conservan todos sus valores y solo quedan con la celda nueva vacía. Las columnas que hayas
+añadido tú al final también se conservan, desplazadas.
+
+Antes de tocar la hoja **simula el resultado y lo valida**. Si el encabezado proyectado no cuadra
+con el esquema, lanza sin haber escrito nada: es preferible que falle el guardado a que los
+valores caigan en columnas equivocadas. Dos guardas más:
+
+- `RENOMBRES` traduce encabezados que en su día se llamaron de otra forma (`Hola` → `ID`,
+  `Mantenimiento (5%)` → `Mantenimiento`), para que una hoja vieja —o **restaurada del historial
+  de versiones**— se reconozca igual. Cada renombrado futuro añade una entrada.
+- `NUCLEO` lista las columnas que ha tenido toda versión del esquema. Si a una hoja llamada
+  `Cotizaciones` le falta alguna, no es una versión anterior de la nuestra y no se toca.
+
+Las 45 cotizaciones históricas se completaron el kWh con una función puntual que lo reconstruía
 como `Costo energía ÷ tarifa` (commit `664a0c1`, retirada una vez usada). Si hiciera falta
 repetirlo, está en el historial de git.
-
-Si el encabezado no corresponde ni al esquema anterior ni al actual, **lanza en vez de escribir**:
-es preferible que falle el guardado a que los valores caigan en columnas equivocadas.
 
 Las posiciones de columna (`COLS_MONEDA_COT`, `COLS_DESTACADAS`, miniatura, kWh) se derivan del
 array `ENC_COTIZACIONES`, no van a mano, para que agregar o mover una columna no vuelva a

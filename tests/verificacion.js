@@ -9,7 +9,7 @@ const SRC = path.join(RAIZ, 'src');
 // ── Hoja falsa con rejilla 2D ─────────────────────────────────
 function crearHoja(nombre) {
   const g = [];                                  // g[fila][col], base 0
-  const fmt = {}, fondo = {};
+  const fmt = {}, fondo = {}, notas = {};
   const celda = (f, c) => {
     while (g.length < f) g.push([]);
     return g[f - 1];
@@ -40,6 +40,7 @@ function crearHoja(nombre) {
         setNumberFormat(v) { for (let j = 0; j < nc; j++) fmt[`${f},${c + j}`] = v; return api; },
         setBackground(v) { for (let j = 0; j < nc; j++) fondo[`${f},${c + j}`] = v; return api; },
         setFontWeight: () => api, setFontColor: () => api,
+        setNote(v) { notas[`${f},${c}`] = v; return api; },
         esFormula: v => typeof v === 'string' && v.charAt(0) === '=',
         getFormulas() { return api.getValues().map(fl => fl.map(v => api.esFormula(v) ? v : '')); },
         getDisplayValues() { return api.getValues().map(fl => fl.map(v => api.esFormula(v) ? '' : String(v === undefined ? '' : v))); },
@@ -48,7 +49,7 @@ function crearHoja(nombre) {
     },
     getDataRange() { return hoja.getRange(1, 1, Math.max(hoja.getLastRow(), 1), Math.max(hoja.getLastColumn(), 1)); },
     setFrozenRows: () => hoja, setColumnWidth: () => hoja, setRowHeight: () => hoja,
-    _g: g, _fmt: fmt, _fondo: fondo,
+    _g: g, _fmt: fmt, _fondo: fondo, _notas: notas,
   };
   return hoja;
 }
@@ -191,7 +192,7 @@ console.log('\n════ 2) CLIENTE (preview) == SERVIDOR (guardado), al peso
   }
 }
 
-console.log('\n════ 3) MIGRACIÓN de la hoja con 22 columnas y datos ════');
+console.log('\n════ 3) MIGRACIÓN desde el esquema original de 22 columnas, con datos ════');
 {
   // Réplica del layout real: encabezado con "Hola" y "Mantenimiento (5%)", 2 filas
   const ENC_VIEJO = ['Hola', 'Miniatura', 'Nombre de la pieza', 'Impresora', 'Multicolor',
@@ -211,16 +212,19 @@ console.log('\n════ 3) MIGRACIÓN de la hoja con 22 columnas y datos ═
 
   check('antes: 22 columnas', cot.getLastColumn(), 22);
   Hoja.inicializar();
-  check('después: 23 columnas', cot.getLastColumn(), 23);
+  check('después: 24 columnas (kWh + Precio real)', cot.getLastColumn(), 24);
   check('encabezado normalizado (A1 ya no dice "Hola")', cot._g[0][0], 'ID');
   check('kWh total en la posición 12', cot._g[0][11], 'kWh total');
   check('"Mantenimiento" sin el (5%)', cot._g[0][15], 'Mantenimiento');
-  check('Fecha sigue al final', cot._g[0][22], 'Fecha');
+  check('Precio real/u tras Precio venta/u', [cot._g[0][20], cot._g[0][21]], ['Precio venta/u', 'Precio real/u']);
+  check('Fecha sigue al final', cot._g[0][23], 'Fecha');
   // los datos históricos se desplazaron, no se perdieron
   check('fila 1: kWh vacío', cot._g[1][11], '');
   check('fila 1: Costo filamento intacto', cot._g[1][12], 25905);
-  check('fila 1: Total venta intacto', cot._g[1][21], 95495);
-  check('fila 1: Fecha intacta', cot._g[1][22], 'FECHA1');
+  check('fila 1: Precio venta intacto', cot._g[1][20], 95495);
+  check('fila 1: Precio real vacío', cot._g[1][21], '');
+  check('fila 1: Total venta intacto', cot._g[1][22], 95495);
+  check('fila 1: Fecha intacta', cot._g[1][23], 'FECHA1');
   check('fila 1: Nombre intacto', cot._g[1][2], 'Aleta Derecha');
   check('fila 2: Piezas en cama intacto', cot._g[2][10], 40);
   // Insumos/u estaba en el índice 17 y tras la inserción queda en el 18
@@ -233,7 +237,7 @@ console.log('\n════ 3) MIGRACIÓN de la hoja con 22 columnas y datos ═
   const antes = JSON.stringify(cot._g);
   Hoja.inicializar();
   check('idempotente: segunda llamada no cambia nada', JSON.stringify(cot._g), antes);
-  check('23 columnas tras repetir', cot.getLastColumn(), 23);
+  check('24 columnas tras repetir', cot.getLastColumn(), 24);
 }
 
 console.log('\n════ 4) La migración se niega ante un layout desconocido ════');
@@ -244,17 +248,17 @@ console.log('\n════ 4) La migración se niega ante un layout desconocido
   const { Hoja } = cargar(ss);
   let err = null;
   try { Hoja.inicializar(); } catch (e) { err = e.message; }
-  check('lanza en vez de escribir mal', /no se reconoce/.test(err || ''), true);
+  check("lanza en vez de escribir mal", /no parece una versión anterior/.test(err || ""), true);
   check('no tocó los datos', cot._g[1], [1, 'x', 'y']);
 }
 
-console.log('\n════ 5) Hoja nueva: 23 columnas y fila completa ════');
+console.log('\n════ 5) Hoja nueva: 24 columnas y fila completa ════');
 {
   const ss = crearSS(); const avisos = [];
   const { Hoja, Calculadora, Config } = cargar(ss, avisos);
   Hoja.inicializar();
   const cot = ss._hojas['Cotizaciones'];
-  check('23 encabezados', cot._g[0].length, 23);
+  check('24 encabezados', cot._g[0].length, 24);
   check('sin avisos de migración', avisos.filter(a => /migrada/.test(a)).length, 0);
 
   const datos = { impresora: 'Creality HI', tiempoHoras: 19.15, filamentoGramos: 498.68,
@@ -263,14 +267,19 @@ console.log('\n════ 5) Hoja nueva: 23 columnas y fila completa ═══
   const costos = Calculadora.calcular(datos, Config.tarifas());
   Hoja.agregarFilaCotizacion(7, datos, costos, '');
   const fila = cot._g[cot.getLastRow() - 1];
-  check('la fila tiene 23 valores', fila.length, 23);
+  check('la fila tiene 24 valores', fila.length, 24);
   check('kWh en la posición 12', Number(fila[11].toFixed(4)), 3.4758);
   check('Costo filamento en la 13', fila[12], 39894);
-  check('Total venta en la 22', fila[21], 134098);
+  check('Precio venta en la 21', fila[20], 134098);
+  check('Precio real/u nace vacía', fila[21], '');
+  check('Total venta en la 23', fila[22], 134098);
   check('formato 4 decimales en kWh', cot._fmt[`${cot.getLastRow()},12`], '0.0000');
-  check('formato moneda en Total venta (col 22)', cot._fmt[`${cot.getLastRow()},22`], '"$"#,##0');
-  check('resaltado en Precio venta/u (col 21)', cot._fondo[`${cot.getLastRow()},21`], '#e8f5e9');
-  check('resaltado en Total venta (col 22)', cot._fondo[`${cot.getLastRow()},22`], '#e8f5e9');
+  check('formato moneda en Precio real/u (col 22)', cot._fmt[`${cot.getLastRow()},22`], '"$"#,##0');
+  check('formato moneda en Total venta (col 23)', cot._fmt[`${cot.getLastRow()},23`], '"$"#,##0');
+  check('resaltado verde en Precio venta/u (col 21)', cot._fondo[`${cot.getLastRow()},21`], '#e8f5e9');
+  check('resaltado ámbar en Precio real/u (col 22)', cot._fondo[`${cot.getLastRow()},22`], '#fff8e1');
+  check('resaltado verde en Total venta (col 23)', cot._fondo[`${cot.getLastRow()},23`], '#e8f5e9');
+  check('nota explicativa en el encabezado', /a mano/.test(cot._notas['1,22'] || ''), true);
 }
 
 console.log('\n════ 6) LIMPIEZA de miniaturas huérfanas ════');
@@ -511,6 +520,37 @@ console.log('\n════ 8e) Robustez del barrido ════');
     '; printer_model = Creality Hi', '; filament used [g] = 5.00',
   ].join('\n'));
   check('respaldo TIME_ELAPSED', [elapsed.tiempoTexto, elapsed.fuentes.tiempo], ['1h 30m', 'TIME_ELAPSED']);
+}
+
+
+console.log('\n════ 9) Migración desde el esquema actual, con una columna propia del usuario ════');
+{
+  const ENC_23 = ['ID', 'Miniatura', 'Nombre de la pieza', 'Impresora', 'Multicolor',
+    'Tiempo impresión', 'Filamento (g)', 'Ancho (mm)', 'Largo (mm)', 'Alto (mm)', 'Piezas en cama',
+    'kWh total', 'Costo filamento', 'Costo energía', 'Subtotal', 'Mantenimiento',
+    'Total costo (cama)', 'Costo impresión/u', 'Insumos/u', 'Costo total/u', 'Precio venta/u',
+    'Total venta (cama)', 'Fecha'];
+  const FILA = [7, '', 'pieza', 'Creality HI', 'No', '3h 07m', 62.36, 10, 20, 30, 1,
+    0.589, 4989, 454, 5442, 272, 5714, 5714, 0, 5714, 17143, 17143, 'FECHA'];
+
+  const cot = crearHoja('Cotizaciones');
+  cot._g.push(ENC_23.concat(['Mis notas']), FILA.concat(['entregado al cliente']));
+  const ss = crearSS({ Cotizaciones: cot });
+  const avisos = [];
+  const { Hoja } = cargar(ss, avisos);
+
+  check('antes: 24 columnas (23 + la del usuario)', cot.getLastColumn(), 24);
+  Hoja.inicializar();
+  check('después: 25 columnas', cot.getLastColumn(), 25);
+  check('Precio real/u insertada en la 22', cot._g[0][21], 'Precio real/u');
+  check('la columna del usuario sobrevive, desplazada', cot._g[0][24], 'Mis notas');
+  check('y su dato también', cot._g[1][24], 'entregado al cliente');
+  check('Precio venta intacto', cot._g[1][20], 17143);
+  check('Precio real nace vacío', cot._g[1][21], '');
+  check('Total venta desplazado', cot._g[1][22], 17143);
+  check('Fecha desplazada', cot._g[1][23], 'FECHA');
+  check('avisó de una sola inserción', /insertadas 1 columna/.test(avisos.join(' ')), true);
+  check('sin renombrados', /renombradas/.test(avisos.join(' ')), false);
 }
 
 console.log(`
