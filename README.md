@@ -21,7 +21,6 @@ Todo el código del proyecto Apps Script vive en `src/`. La raíz guarda configu
 | `src/Dialog.html` | Estructura del diálogo modal (formulario + preview de costos) |
 | `src/Script.html` | JS del cliente: parser de G-code, preview en vivo, envío al servidor |
 | `src/Styles.html` | CSS del diálogo |
-| `src/Código.js` | ⚠️ Versión monolítica anterior — ver [Problemas conocidos](#problemas-conocidos) |
 
 ## Flujo
 
@@ -93,25 +92,35 @@ clasp open-script
 ```
 
 > ⚠️ **`clasp push` reemplaza el contenido del proyecto remoto con lo que haya en `src/`.**
-> Un archivo borrado en local desaparece del editor de Apps Script. Haz `clasp pull` antes
-> de empezar si editaste algo directamente en el navegador, para no perder cambios.
+> Haz `clasp pull` antes de empezar si editaste algo directamente en el navegador, para no
+> perder cambios.
+
+> 🐛 **clasp 3.3.0 ignora los archivos borrados.** Si eliminas un archivo de `src/`,
+> `clasp push` responde `Script is already up to date` y no sube nada — el archivo sigue vivo
+> en el proyecto. Verificado con clon fresco. Para borrados usa `clasp push --force`, o borra
+> el archivo a mano en el editor de Apps Script. Las modificaciones y los archivos nuevos sí
+> se detectan normalmente.
 
 Ciclo recomendado: `clasp pull` → commit ("estado remoto") → editar en local → `clasp push` → commit.
 
+Para comprobar que el remoto y el repo no se han desincronizado, clona el proyecto en una
+carpeta temporal y compara con `sha256sum` contra `src/`.
+
 ## Problemas conocidos
 
-1. **`Código.js` duplica funciones de `Code.js`.** Ambos declaran `onOpen`, `mostrarDialogo` y
-   `guardarCotizacion` en el mismo ámbito global de Apps Script. Gana el último archivo en el
-   orden del proyecto (hoy `Code.js`, la versión modular), así que la app funciona *por
-   casualidad del orden*. Además el `mostrarDialogo` de `Código.js` usa
-   `createHtmlOutputFromFile`, que no evalúa los `<?!= include(...) ?>` de `Dialog.html`: si
-   alguna vez ganara ese, el diálogo saldría sin CSS ni JS. `Código.js` también trae tarifas
-   viejas ($75/g). **Pendiente: borrarlo.**
-2. **Las tarifas están duplicadas** en `src/Calculadora.js` (servidor) y `src/Script.html`
+1. **Las tarifas están duplicadas** en `src/Calculadora.js` (servidor) y `src/Script.html`
    (cliente, para el preview). Hoy coinciden en $80/g, pero hay que cambiarlas en dos sitios o
    el preview mentirá respecto a lo que se guarda.
-3. **`=IMAGE("url";4;60;60)` usa `;` como separador**, lo que depende de la configuración
+2. **`=IMAGE("url";4;60;60)` usa `;` como separador**, lo que depende de la configuración
    regional de la hoja. En una hoja en inglés habría que usar `,`.
-4. **La URL de miniatura** es del tipo `drive.google.com/uc?export=view&id=…`; Google ha ido
+3. **La URL de miniatura** es del tipo `drive.google.com/uc?export=view&id=…`; Google ha ido
    restringiendo ese formato para incrustar imágenes. Si las miniaturas dejan de verse, es el
    primer sospechoso.
+
+### Resuelto
+
+- **`Código.js` (monolito legacy), eliminado en `d0d8a0c`.** Declaraba `onOpen`,
+  `mostrarDialogo` y `guardarCotizacion` en el mismo ámbito global que `Code.js`; la app
+  funcionaba solo porque `Code.js` iba después en el orden del proyecto y sobrescribía sus
+  declaraciones. Traía además la tarifa vieja de $75/g. Recuperable en `ec2c7bc` y en la
+  versión 1 del proyecto Apps Script.
