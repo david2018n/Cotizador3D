@@ -36,6 +36,8 @@ const Calculadora = (() => {
     const totalVenta           = precioUnidad * unidades;
 
     return {
+      // Sin redondear: la hoja lo muestra con 4 decimales para auditar la energía
+      kwhTotal:             kwhTotal,
       costoFilamento:       Math.round(costoFilamento),
       costoEnergia:         Math.round(costoEnergia),
       subtotal:             Math.round(subtotal),

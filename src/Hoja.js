@@ -10,6 +10,10 @@ const Hoja = (() => {
     detalle:      "Cotizaciones_Insumos"
   };
 
+  // El encabezado de mantenimiento no lleva el porcentaje: es configurable
+  // en la hoja "Parámetros" y quedaría desactualizado al cambiarlo.
+  const COL_KWH = "kWh total";
+
   const ENC_COTIZACIONES = [
     "ID",
     "Miniatura",
@@ -22,10 +26,11 @@ const Hoja = (() => {
     "Largo (mm)",
     "Alto (mm)",
     "Piezas en cama",
+    COL_KWH,
     "Costo filamento",
     "Costo energía",
     "Subtotal",
-    "Mantenimiento (5%)",
+    "Mantenimiento",
     "Total costo (cama)",
     "Costo impresión/u",
     "Insumos/u",
@@ -46,17 +51,69 @@ const Hoja = (() => {
     "Total"
   ];
 
-  // Columnas moneda en Cotizaciones (base 1)
-  const COLS_MONEDA_COT   = [12, 13, 14, 15, 16, 17, 18, 19, 20];
-  const COLS_DESTACADAS   = [19, 20]; // Precio venta/u y Total venta (cama)
+  // Posiciones en Cotizaciones (base 1), derivadas del encabezado para que
+  // no se desfasen al agregar o mover columnas.
+  const COL = nombre => ENC_COTIZACIONES.indexOf(nombre) + 1;
+
+  const COL_MINIATURA = COL("Miniatura");
+  const COL_KWH_NUM   = COL(COL_KWH);
+  // Todo el bloque de dinero, de "Costo filamento" a "Total venta (cama)"
+  const COLS_MONEDA_COT = (() => {
+    const desde = COL("Costo filamento"), hasta = COL("Total venta (cama)");
+    return Array.from({ length: hasta - desde + 1 }, (_, i) => desde + i);
+  })();
+  const COLS_DESTACADAS = [COL("Precio venta/u"), COL("Total venta (cama)")];
 
   // ── Inicialización ────────────────────────────────────────
 
   function inicializar() {
     const ss = SpreadsheetApp.getActiveSpreadsheet();
-    _inicializarHoja(ss, NOMBRES.cotizaciones, ENC_COTIZACIONES, _formatearEncCotizaciones);
+    const cot = _inicializarHoja(ss, NOMBRES.cotizaciones, ENC_COTIZACIONES, _formatearEncCotizaciones);
+    _migrarCotizaciones(cot);
     _inicializarHoja(ss, NOMBRES.insumos,      ENC_INSUMOS,      _formatearEncSimple);
     _inicializarHoja(ss, NOMBRES.detalle,      ENC_DETALLE,      _formatearEncSimple);
+  }
+
+  /**
+   * Migración del esquema de Cotizaciones: inserta la columna "kWh total" en
+   * las hojas creadas antes de que existiera y normaliza el encabezado.
+   *
+   * Es idempotente y no destructiva: insertColumnBefore desplaza las celdas,
+   * así que las cotizaciones históricas conservan todos sus valores y solo
+   * quedan con la celda de kWh vacía. Si el encabezado no es el layout previo
+   * conocido, lanza en vez de escribir: es preferible que el guardado falle a
+   * que los datos se escriban en columnas equivocadas.
+   */
+  function _migrarCotizaciones(hoja) {
+    const ancho = hoja.getLastColumn();
+    if (ancho === 0) return;                                   // hoja recién creada
+
+    const encabezados = hoja.getRange(1, 1, 1, ancho).getValues()[0]
+      .map(v => String(v).trim());
+    if (encabezados.indexOf(COL_KWH) !== -1) return;            // ya migrada
+
+    const anchoPrevio = ENC_COTIZACIONES.length - 1;            // layout sin kWh
+    if (ancho !== anchoPrevio) {
+      throw new Error(
+        `La hoja "${NOMBRES.cotizaciones}" tiene ${ancho} columnas y no se reconoce ` +
+        `como el esquema anterior (${anchoPrevio}) ni como el actual ` +
+        `(${ENC_COTIZACIONES.length}). Se detiene para no escribir en columnas ` +
+        `equivocadas: revísala a mano y agrega la columna "${COL_KWH}" en la ` +
+        `posición ${COL_KWH_NUM}.`
+      );
+    }
+
+    hoja.insertColumnBefore(COL_KWH_NUM);
+    const rango = hoja.getRange(1, 1, 1, ENC_COTIZACIONES.length);
+    rango.setValues([ENC_COTIZACIONES]);
+    _formatearEncCotizaciones(hoja, rango);
+    hoja.setFrozenRows(1);
+
+    console.warn(
+      `Hoja "${NOMBRES.cotizaciones}" migrada: columna "${COL_KWH}" insertada en la ` +
+      `posición ${COL_KWH_NUM} y encabezado normalizado. Las cotizaciones anteriores ` +
+      `quedan con esa celda vacía (el kWh es recalculable desde Impresora y Tiempo).`
+    );
   }
 
   function _inicializarHoja(ss, nombre, encabezados, formatFn) {
@@ -72,9 +129,9 @@ const Hoja = (() => {
 
   function _formatearEncCotizaciones(hoja, rango) {
     rango.setFontWeight("bold").setBackground("#1a1a2e").setFontColor("#ffffff");
-    hoja.setColumnWidth(2, 80);
-    // Destacar columnas Total real
-    hoja.getRange(1, COLS_DESTACADAS[0], 1, 2)
+    hoja.setColumnWidth(COL_MINIATURA, 80);
+    // Destacar Precio venta/u y Total venta (cama)
+    hoja.getRange(1, COLS_DESTACADAS[0], 1, COLS_DESTACADAS.length)
         .setBackground("#155724").setFontColor("#ffffff");
   }
 
@@ -158,6 +215,7 @@ const Hoja = (() => {
   function agregarFilaCotizacion(id, datos, costos, imagenUrl) {
     const hoja = _obtener(NOMBRES.cotizaciones);
     if (hoja.getLastRow() === 0) inicializar();
+    else _migrarCotizaciones(hoja);   // hojas creadas antes de la columna de kWh
 
     const fila = _construirFilaCotizacion(id, datos, costos, imagenUrl);
     hoja.appendRow(fila);
@@ -179,6 +237,7 @@ const Hoja = (() => {
       datos.largoMm         || "",
       datos.altoMm          || "",
       datos.unidadesPorCama || 1,
+      costos.kwhTotal,
       costos.costoFilamento,
       costos.costoEnergia,
       costos.subtotal,
@@ -194,14 +253,16 @@ const Hoja = (() => {
   }
 
   function _aplicarFormatosCotizacion(hoja, fila, imagenUrl) {
+    // 4 decimales: el spec los pide para poder auditar el cálculo de energía
+    hoja.getRange(fila, COL_KWH_NUM).setNumberFormat("0.0000");
     COLS_MONEDA_COT.forEach(col =>
       hoja.getRange(fila, col).setNumberFormat('"$"#,##0')
     );
-    hoja.getRange(fila, COLS_DESTACADAS[0], 1, 2)
+    hoja.getRange(fila, COLS_DESTACADAS[0], 1, COLS_DESTACADAS.length)
         .setBackground("#e8f5e9").setFontWeight("bold");
 
     if (imagenUrl) {
-      hoja.getRange(fila, 2).setFormula(`=IMAGE("${imagenUrl}";4;60;60)`);
+      hoja.getRange(fila, COL_MINIATURA).setFormula(`=IMAGE("${imagenUrl}";4;60;60)`);
       hoja.setRowHeight(fila, 65);
     }
   }

@@ -19,7 +19,6 @@ let _thumbnailBase64   = null;
 let _multicolor        = false;
 let _insumos           = [];       // [{ nombre, precioUnidad, esNuevo }]
 let _catalogo          = [];       // cargado desde la hoja al abrir
-let _costoFilamentoCOP = null;     // leído directo del gcode (total filament cost)
 
 // ============================================================
 //  INICIALIZACIÓN — cargar catálogo al abrir el diálogo
@@ -312,16 +311,9 @@ function _extraerDatosHeader(lineas, textoTail, encontrados) {
     }
   }
 
-  // Costo de filamento total (calculado por el laminador, suma todos los carretes).
-  // Se usa directamente en el preview en lugar de gramos × tarifa.
-  _costoFilamentoCOP = null;
-  for (const l of lineasTail) {
-    const mCosto = l.match(/^;\s*total filament cost\s*=\s*([\d.]+)/i);
-    if (mCosto) {
-      _costoFilamentoCOP = Math.round(parseFloat(mCosto[1]));
-      break;
-    }
-  }
+  // Nota: el G-code también trae "; total filament cost", el costo que calcula
+  // el laminador con su propio precio de filamento. No se usa: el spec define
+  // el costo como gramos × tarifa, y la tarifa vive en la hoja "Parámetros".
   if (maxX !== null && minX !== null) {
     document.getElementById("anchoMm").value = (maxX - minX).toFixed(1);
     document.getElementById("largoMm").value = (maxY - minY).toFixed(1);
@@ -378,24 +370,29 @@ function actualizarPreview() {
     return;
   }
 
+  // Misma cadena que Calculadora.calcular: todo a precisión completa y se
+  // redondea solo al pintar. Si aquí se redondeara paso a paso, el preview
+  // diferiría en algunos pesos de lo que termina guardado en la hoja.
   const cfg          = CONSUMO[impresora];
   const kwh          = cfg.kwhCalor + (cfg.wImpresion / 1000) * tiempoH;
-  const cFil = _costoFilamentoCOP !== null
-    ? _costoFilamentoCOP
-    : Math.round(gramos * TARIFAS.filamentoPorGramo);
-  const cEn          = Math.round(kwh    * TARIFAS.energiaPorKwh);
+  const cFil         = gramos * TARIFAS.filamentoPorGramo;
+  const cEn          = kwh * TARIFAS.energiaPorKwh;
   const sub          = cFil + cEn;
-  const mant         = Math.round(sub * TARIFAS.mantenimientoPct);
+  const mant         = sub * TARIFAS.mantenimientoPct;
   const totalCama    = sub + mant;
-  const cImpresionU  = Math.round(totalCama / unidades);
-  const insumosU     = Math.round(_insumos.reduce((s, i) => s + i.precioUnidad, 0));
+  const cImpresionU  = totalCama / unidades;
+  const insumosU     = _insumos.reduce((s, i) => s + i.precioUnidad, 0);
   const costoTotalU  = cImpresionU + insumosU;
-  const pUni         = Math.round(costoTotalU * TARIFAS.multiplicadorVenta);
+  const pUni         = costoTotalU * TARIFAS.multiplicadorVenta;
   const totalVenta   = pUni * unidades;
 
-  const fmt = v => "$" + v.toLocaleString("es-CO");
+  const fmt = v => "$" + Math.round(v).toLocaleString("es-CO");
   document.getElementById("pc-filamento").textContent     = fmt(cFil);
+  document.getElementById("pc-filamento-detalle").textContent =
+    `${_formatearNumero(gramos)} g × $${_formatearNumero(TARIFAS.filamentoPorGramo)}/g`;
   document.getElementById("pc-energia").textContent       = fmt(cEn);
+  document.getElementById("pc-energia-detalle").textContent =
+    `${kwh.toFixed(4)} kWh × $${_formatearNumero(TARIFAS.energiaPorKwh)}`;
   document.getElementById("pc-subtotal").textContent      = fmt(sub);
   document.getElementById("pc-mantenimiento").textContent = fmt(mant);
   document.getElementById("pc-total-cama").textContent    = fmt(totalCama);
@@ -489,7 +486,6 @@ function limpiarFormulario() {
   _thumbnailBase64   = null;
   _multicolor        = false;
   _insumos           = [];
-  _costoFilamentoCOP = null;
   _renderizarInsumos();
   const badge = document.getElementById("badgeMulticolor");
   badge.textContent = "Carga un G-code";
