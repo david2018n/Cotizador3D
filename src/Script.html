@@ -3,12 +3,12 @@
 //  Script.html — JavaScript del cliente
 // ============================================================
 
-const TARIFAS = {
-  filamentoPorGramo:  80,
-  energiaPorKwh:      770,
-  mantenimientoPct:   0.05,
-  multiplicadorVenta: 3.0
-};
+// Las tarifas las envía el servidor desde la hoja "Parámetros" al abrir el
+// diálogo. No se definen aquí a propósito: si el cliente tuviera su propia
+// copia, el preview podría mostrar un precio distinto al que se guarda.
+let TARIFAS    = null;
+let _parametros = [];   // [{ clave, descripcion, unidad, valor }]
+
 const CONSUMO = {
   "Ender 3 S1 Pro": { kwhCalor: 0.0360, wImpresion: 152 },
   "Creality HI":    { kwhCalor: 0.0288, wImpresion: 180 }
@@ -31,6 +31,35 @@ google.script.run
     _poblarDatalist();
   })
   .obtenerCatalogoInsumos();
+
+google.script.run
+  .withSuccessHandler(cfg => {
+    _parametros = (cfg && cfg.parametros) || [];
+    TARIFAS = _parametros.reduce((acc, p) => { acc[p.clave] = p.valor; return acc; }, {});
+    _aplicarTarifasEnUi();
+    actualizarPreview();   // por si el G-code ya se cargó mientras llegaban
+  })
+  .withFailureHandler(err => {
+    mostrarAlerta("❌ No se pudieron leer los parámetros de la hoja: " + err.message, "error");
+  })
+  .obtenerConfiguracion();
+
+// Refleja en el diálogo las tarifas que acabamos de recibir: el % real de
+// mantenimiento en su etiqueta y el pie con los valores aplicados.
+function _aplicarTarifasEnUi() {
+  const pct = TARIFAS.mantenimientoPct * 100;
+
+  document.getElementById("pc-mantenimiento-label").textContent =
+    `Mantenimiento (${_formatearNumero(pct)}%)`;
+
+  const money = v => "$" + _formatearNumero(v);
+  document.getElementById("pc-tarifas").innerHTML =
+    `<b>Tarifas aplicadas:</b> ${money(TARIFAS.filamentoPorGramo)}/g · ` +
+    `${money(TARIFAS.energiaPorKwh)}/kWh · ` +
+    `mantenimiento ${_formatearNumero(pct)}% · ` +
+    `venta ×${_formatearNumero(TARIFAS.multiplicadorVenta)}<br>` +
+    `Se editan en la hoja <b>Parámetros</b>. Vuelve a abrir este diálogo para recargarlas.`;
+}
 
 function _poblarDatalist() {
   const dl = document.getElementById("catalogoList");
@@ -341,7 +370,9 @@ function actualizarPreview() {
   const impresora = document.getElementById("impresora").value;
   const unidades  = parseInt(document.getElementById("unidadesPorCama").value) || 1;
 
-  if (!gramos || !tiempoH || tiempoH <= 0) {
+  // Sin TARIFAS todavía (la llamada al servidor no ha vuelto) no se puede
+  // calcular nada: mejor no mostrar cifras que mostrarlas mal.
+  if (!TARIFAS || !gramos || !tiempoH || tiempoH <= 0) {
     document.getElementById("preview-costos").style.display = "none";
     document.getElementById("btnGuardar").disabled = true;
     return;
@@ -470,6 +501,11 @@ function mostrarAlerta(msg, tipo) {
   const el = document.getElementById("alertBox");
   el.textContent = msg;
   el.className   = "alert " + tipo;
+}
+
+// Number() quita los ceros de relleno de toFixed: 80.00 → "80", 80.50 → "80,5"
+function _formatearNumero(n) {
+  return Number(Number(n).toFixed(2)).toLocaleString("es-CO");
 }
 
 function _segundosATexto(seg) {

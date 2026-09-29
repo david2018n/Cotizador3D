@@ -15,7 +15,8 @@ Todo el código del proyecto Apps Script vive en `src/`. La raíz guarda configu
 |---|---|
 | `src/appsscript.json` | Manifiesto. Runtime V8, zona horaria `America/Bogota` |
 | `src/Code.js` | **Orquestador activo.** Menú, diálogo, `guardarCotizacion()`, `include()` |
-| `src/Calculadora.js` | Lógica de negocio: tarifas, consumo por impresora, cálculo de costos |
+| `src/Config.js` | Lee las tarifas de la hoja `Parámetros`; valores por defecto y validación |
+| `src/Calculadora.js` | Lógica de negocio: consumo por impresora y cálculo de costos |
 | `src/Hoja.js` | Acceso a Sheets: encabezados, IDs, catálogo de insumos, escritura de filas |
 | `src/Drive.js` | Guarda la miniatura PNG en Drive y devuelve la URL pública |
 | `src/Dialog.html` | Estructura del diálogo modal (formulario + preview de costos) |
@@ -47,16 +48,37 @@ Todo el código del proyecto Apps Script vive en `src/`. La raíz guarda configu
 
 ## Modelo de costos
 
-Tarifas en `src/Calculadora.js` (`TARIFAS`) y consumo por impresora (`IMPRESORAS`):
+### Tarifas — editables desde la hoja
 
-| Parámetro | Valor |
-|---|---|
-| Filamento | $80 / g |
-| Energía | $770 / kWh |
-| Mantenimiento | 5% del subtotal |
-| Multiplicador de venta | 3.0 |
-| Ender 3 S1 Pro | 0.0360 kWh calentamiento · 152 W impresión |
-| Creality HI | 0.0288 kWh calentamiento · 180 W impresión |
+Las cuatro tarifas viven en la hoja **`Parámetros`**, columna `Valor`. Son la única fuente de
+verdad en ejecución: las usa el servidor al guardar y el diálogo para el preview, así que no
+pueden divergir. Cambiar una tarifa es editar una celda; el diálogo las recarga al abrirse.
+
+| Clave | Por defecto | Unidad |
+|---|---|---|
+| `filamentoPorGramo` | 80 | $/g |
+| `energiaPorKwh` | 770 | $/kWh |
+| `mantenimientoPct` | 5% | % del subtotal (celda con formato de porcentaje) |
+| `multiplicadorVenta` | 3.00 | × sobre el costo |
+
+Comportamiento de `src/Config.js`:
+
+- La hoja se crea y se siembra sola la primera vez que se necesita — no hace falta ejecutar
+  `Inicializar hojas`, aunque ese menú también la crea.
+- Si el código gana una tarifa nueva, se agrega a la hoja sin tocar los valores ya editados.
+- Un valor vacío, no numérico o negativo cae al valor por defecto y deja un aviso en
+  `console.warn` (visible en Ejecuciones del editor). Nunca detiene el guardado.
+- Se acepta coma decimal: `80,5` se lee como 80.5.
+- Los valores por defecto de la tabla anterior están en `DEFECTOS`, dentro de `src/Config.js`.
+
+### Consumo por impresora
+
+Sigue en `src/Calculadora.js` (`IMPRESORAS`), aún no parametrizable:
+
+| Impresora | Calentamiento | Impresión |
+|---|---|---|
+| Ender 3 S1 Pro | 0.0360 kWh | 152 W |
+| Creality HI | 0.0288 kWh | 180 W |
 
 ```
 kWh          = kwhCalentamiento + (wImpresion / 1000) × tiempoHoras
@@ -74,8 +96,9 @@ totalVenta   = precioVenta/u × piezasEnCama
 
 ## Hojas de cálculo
 
-`Inicializar hojas` (menú 🖨️ Cotizador 3D) crea tres hojas:
+`Inicializar hojas` (menú 🖨️ Cotizador 3D) crea cuatro hojas:
 
+- **Parámetros** — las tarifas. `Clave · Descripción · Valor · Unidad`; solo se edita `Valor`.
 - **Cotizaciones** — una fila por cotización, 22 columnas (ID, miniatura, datos de la pieza, desglose de costos, fecha).
 - **Insumos** — catálogo `ID · Nombre · Precio unitario`. Se alimenta solo: si escribes un insumo nuevo en el diálogo, se crea; si cambias el precio de uno existente, se actualiza.
 - **Cotizaciones_Insumos** — detalle N:N entre cotizaciones e insumos.
@@ -108,9 +131,14 @@ carpeta temporal y compara con `sha256sum` contra `src/`.
 
 ## Problemas conocidos
 
-1. **Las tarifas están duplicadas** en `src/Calculadora.js` (servidor) y `src/Script.html`
-   (cliente, para el preview). Hoy coinciden en $80/g, pero hay que cambiarlas en dos sitios o
-   el preview mentirá respecto a lo que se guarda.
+1. **El preview puede mostrar un costo de filamento distinto al que se guarda.**
+   `src/Script.html` lee `; total filament cost = …` del G-code y, si existe, lo usa en el
+   preview en vez de `gramos × filamentoPorGramo` (variable `_costoFilamentoCOP`). Pero
+   `guardar()` no lo envía al servidor, y `Calculadora` siempre aplica la tarifa. Resultado: con
+   un G-code que traiga ese comentario, la cifra del diálogo y la de la hoja no coinciden — y
+   cambiar la tarifa no mueve el preview. Es anterior a la parametrización, no la introdujo.
+   Dos salidas: enviar `costoFilamentoCOP` en `datos` y que el servidor lo respete, o eliminar
+   ese atajo y usar siempre la tarifa de la hoja (más coherente ahora que es editable).
 2. **`=IMAGE("url";4;60;60)` usa `;` como separador**, lo que depende de la configuración
    regional de la hoja. En una hoja en inglés habría que usar `,`.
 3. **La URL de miniatura** es del tipo `drive.google.com/uc?export=view&id=…`; Google ha ido
@@ -118,6 +146,11 @@ carpeta temporal y compara con `sha256sum` contra `src/`.
    primer sospechoso.
 
 ### Resuelto
+
+- **Tarifas duplicadas entre cliente y servidor.** Vivían a la vez en `Calculadora.js` y en
+  `Script.html`; había que cambiarlas en dos sitios. Ahora el cliente no define ninguna: las
+  pide con `obtenerConfiguracion()` y, mientras no lleguen, el preview no se muestra y
+  `Guardar` queda deshabilitado.
 
 - **`Código.js` (monolito legacy), eliminado en `d0d8a0c`.** Declaraba `onOpen`,
   `mostrarDialogo` y `guardarCotizacion` en el mismo ámbito global que `Code.js`; la app

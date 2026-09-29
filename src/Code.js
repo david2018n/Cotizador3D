@@ -23,7 +23,11 @@ function mostrarDialogo() {
 
 function inicializarHojas() {
   Hoja.inicializar();
-  SpreadsheetApp.getUi().alert("✅ Hojas inicializadas correctamente.");
+  Config.inicializar();
+  SpreadsheetApp.getUi().alert(
+    `✅ Hojas inicializadas correctamente.\n\n` +
+    `Las tarifas se editan en la hoja "${Config.HOJA}", columna Valor.`
+  );
 }
 
 // ── Llamados desde el diálogo ─────────────────────────────────
@@ -33,10 +37,16 @@ function obtenerCatalogoInsumos() {
   return Hoja.leerCatalogoInsumos();
 }
 
+// Tarifas vigentes para el preview del diálogo. El cliente NO define
+// tarifas propias: usa estas, las mismas que aplica el servidor al guardar.
+function obtenerConfiguracion() {
+  return { parametros: Config.tarifasConMetadatos() };
+}
+
 // Guarda la cotización completa con sus insumos
 function guardarCotizacion(datos) {
   try {
-    const costos      = Calculadora.calcular(datos);
+    const costos      = Calculadora.calcular(datos, Config.tarifas());
     const idCotizacion = Hoja.siguienteId();
     const imagenUrl   = datos.thumbnailBase64
       ? Drive.guardarMiniatura(datos.thumbnailBase64, datos.nombrePieza)

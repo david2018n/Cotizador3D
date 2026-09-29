@@ -4,19 +4,19 @@
 
 const Calculadora = (() => {
 
-  const TARIFAS = {
-    filamentoPorGramo:  80,
-    energiaPorKwh:      770,
-    mantenimientoPct:   0.05,
-    multiplicadorVenta: 3.0
-  };
-
   const IMPRESORAS = {
     "Ender 3 S1 Pro": { kwhCalentamiento: 0.0360, wImpresion: 152 },
     "Creality HI":    { kwhCalentamiento: 0.0288, wImpresion: 180 }
   };
 
-  function calcular(datos) {
+  /**
+   * @param datos    Datos de la pieza enviados por el diálogo.
+   * @param tarifas  Tarifas de Config.tarifas(). Si se omite, se leen de la
+   *                 hoja "Parámetros" (útil al llamar desde el editor).
+   */
+  function calcular(datos, tarifas) {
+    const TARIFAS = tarifas || Config.tarifas();
+
     const config = IMPRESORAS[datos.impresora];
     if (!config) throw new Error(`Impresora desconocida: ${datos.impresora}`);
 
@@ -53,6 +53,6 @@ const Calculadora = (() => {
     return insumos.reduce((suma, i) => suma + (parseFloat(i.precioUnidad) || 0), 0);
   }
 
-  return { calcular, TARIFAS, IMPRESORAS };
+  return { calcular, IMPRESORAS };
 
 })();
