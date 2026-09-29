@@ -46,8 +46,8 @@ const Hoja = (() => {
     "Insumos/u",
     "Costo total/u",
     "Precio venta/u",
-    COL_REAL,
     "Total venta (cama)",
+    COL_REAL,
     "Fecha"
   ];
 
@@ -86,11 +86,13 @@ const Hoja = (() => {
   const COL_MINIATURA  = COL("Miniatura");
   const COL_KWH_NUM    = COL(COL_KWH);
   const COL_REAL_NUM   = COL(COL_REAL);
-  // Todo el bloque de dinero, de "Costo filamento" a "Total venta (cama)"
-  const COLS_MONEDA_COT = (() => {
-    const desde = COL("Costo filamento"), hasta = COL("Total venta (cama)");
-    return Array.from({ length: hasta - desde + 1 }, (_, i) => desde + i);
-  })();
+  // Columnas con formato de moneda, por nombre: así no dependen de que el
+  // bloque de dinero siga siendo contiguo.
+  const COLS_MONEDA_COT = [
+    "Costo filamento", "Costo energía", "Subtotal", "Mantenimiento",
+    "Total costo (cama)", "Costo impresión/u", "Insumos/u", "Costo total/u",
+    "Precio venta/u", "Total venta (cama)", COL_REAL
+  ].map(COL);
   const COLS_DESTACADAS = [COL("Precio venta/u"), COL("Total venta (cama)")];
 
   // ── Inicialización ────────────────────────────────────────
@@ -127,8 +129,21 @@ const Hoja = (() => {
     const actuales = crudos.map(h => RENOMBRES[h] || h);
     const renombrados = crudos.filter(h => RENOMBRES[h] !== undefined);
 
-    const faltantes = ENC_COTIZACIONES.filter(h => actuales.indexOf(h) === -1);
-    if (!faltantes.length && !renombrados.length) return;   // ya está al día
+    // Alineación por POSICIÓN, no por presencia: una columna que existe pero
+    // está en otro sitio desplazaría todos los datos que se escriban después.
+    const alineada = ENC_COTIZACIONES.every((h, i) => actuales[i] === h);
+    if (alineada && !renombrados.length) return;            // ya está al día
+
+    if (alineada) {                                          // solo hay que refrescar etiquetas
+      const soloEncabezado = hoja.getRange(1, 1, 1, ENC_COTIZACIONES.length);
+      soloEncabezado.setValues([ENC_COTIZACIONES]);
+      _formatearEncCotizaciones(hoja, soloEncabezado);
+      console.warn(
+        `Hoja "${NOMBRES.cotizaciones}": encabezado actualizado ` +
+        `(${renombrados.join(", ")}). Ninguna columna cambió de sitio.`
+      );
+      return;
+    }
 
     const sinNucleo = NUCLEO.filter(h => actuales.indexOf(h) === -1);
     if (sinNucleo.length) {
@@ -139,19 +154,22 @@ const Hoja = (() => {
       );
     }
 
+    const faltantes = ENC_COTIZACIONES.filter(h => actuales.indexOf(h) === -1);
+
     // Simulación: mismas inserciones, sobre una copia del encabezado
     const proyectado = actuales.slice();
     faltantes.forEach(nombre => proyectado.splice(ENC_COTIZACIONES.indexOf(nombre), 0, nombre));
 
     const desalineada = ENC_COTIZACIONES.findIndex((h, i) => proyectado[i] !== h);
     if (desalineada !== -1) {
+      // Se describe el desajuste sin proponer borrar ninguna columna: la primera
+      // que no cuadra suele ser una que sí tiene datos, desplazada por otra.
       throw new Error(
-        `No se reconoce el encabezado de la hoja "${NOMBRES.cotizaciones}": tras ` +
-        `insertar las columnas que faltan (${faltantes.join(", ")}), la posición ` +
-        `${desalineada + 1} tendría "${proyectado[desalineada]}" en vez de ` +
-        `"${ENC_COTIZACIONES[desalineada]}". Se detiene sin escribir nada para no ` +
-        `volcar datos en columnas equivocadas. Revisa la fila 1: el esquema esperado ` +
-        `es ${ENC_COTIZACIONES.join(" | ")}.`
+        `No se reconoce el encabezado de la hoja "${NOMBRES.cotizaciones}": en la posición ` +
+        `${desalineada + 1} hay "${proyectado[desalineada] || "(vacío)"}" y se esperaba ` +
+        `"${ENC_COTIZACIONES[desalineada]}". Se detiene sin escribir nada para no volcar ` +
+        `datos en columnas equivocadas. Reordena la fila 1 —y los datos de sus columnas— ` +
+        `para que coincida con el esquema: ${ENC_COTIZACIONES.join(" | ")}.`
       );
     }
 
@@ -309,8 +327,8 @@ const Hoja = (() => {
       costos.insumosUnidad,
       costos.costoTotalUnidad,
       costos.precioUnidad,
-      "",                       // Precio real/u: lo llena el usuario
       costos.totalVenta,
+      "",                       // Precio real/u: lo llena el usuario
       new Date()
     ];
   }

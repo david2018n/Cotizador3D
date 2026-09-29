@@ -216,14 +216,14 @@ console.log('\n════ 3) MIGRACIÓN desde el esquema original de 22 column
   check('encabezado normalizado (A1 ya no dice "Hola")', cot._g[0][0], 'ID');
   check('kWh total en la posición 12', cot._g[0][11], 'kWh total');
   check('"Mantenimiento" sin el (5%)', cot._g[0][15], 'Mantenimiento');
-  check('Precio real/u tras Precio venta/u', [cot._g[0][20], cot._g[0][21]], ['Precio venta/u', 'Precio real/u']);
+  check('Precio real/u tras Total venta (cama)', [cot._g[0][21], cot._g[0][22]], ['Total venta (cama)', 'Precio real/u']);
   check('Fecha sigue al final', cot._g[0][23], 'Fecha');
   // los datos históricos se desplazaron, no se perdieron
   check('fila 1: kWh vacío', cot._g[1][11], '');
   check('fila 1: Costo filamento intacto', cot._g[1][12], 25905);
   check('fila 1: Precio venta intacto', cot._g[1][20], 95495);
-  check('fila 1: Precio real vacío', cot._g[1][21], '');
-  check('fila 1: Total venta intacto', cot._g[1][22], 95495);
+  check('fila 1: Total venta intacto', cot._g[1][21], 95495);
+  check('fila 1: Precio real vacío', cot._g[1][22], '');
   check('fila 1: Fecha intacta', cot._g[1][23], 'FECHA1');
   check('fila 1: Nombre intacto', cot._g[1][2], 'Aleta Derecha');
   check('fila 2: Piezas en cama intacto', cot._g[2][10], 40);
@@ -271,15 +271,15 @@ console.log('\n════ 5) Hoja nueva: 24 columnas y fila completa ═══
   check('kWh en la posición 12', Number(fila[11].toFixed(4)), 3.4758);
   check('Costo filamento en la 13', fila[12], 39894);
   check('Precio venta en la 21', fila[20], 134098);
-  check('Precio real/u nace vacía', fila[21], '');
-  check('Total venta en la 23', fila[22], 134098);
+  check('Total venta en la 22', fila[21], 134098);
+  check('Precio real/u nace vacía en la 23', fila[22], '');
   check('formato 4 decimales en kWh', cot._fmt[`${cot.getLastRow()},12`], '0.0000');
-  check('formato moneda en Precio real/u (col 22)', cot._fmt[`${cot.getLastRow()},22`], '"$"#,##0');
-  check('formato moneda en Total venta (col 23)', cot._fmt[`${cot.getLastRow()},23`], '"$"#,##0');
+  check('formato moneda en Total venta (col 22)', cot._fmt[`${cot.getLastRow()},22`], '"$"#,##0');
+  check('formato moneda en Precio real/u (col 23)', cot._fmt[`${cot.getLastRow()},23`], '"$"#,##0');
   check('resaltado verde en Precio venta/u (col 21)', cot._fondo[`${cot.getLastRow()},21`], '#e8f5e9');
-  check('resaltado ámbar en Precio real/u (col 22)', cot._fondo[`${cot.getLastRow()},22`], '#fff8e1');
-  check('resaltado verde en Total venta (col 23)', cot._fondo[`${cot.getLastRow()},23`], '#e8f5e9');
-  check('nota explicativa en el encabezado', /a mano/.test(cot._notas['1,22'] || ''), true);
+  check('resaltado verde en Total venta (col 22)', cot._fondo[`${cot.getLastRow()},22`], '#e8f5e9');
+  check('resaltado ámbar en Precio real/u (col 23)', cot._fondo[`${cot.getLastRow()},23`], '#fff8e1');
+  check('nota explicativa en el encabezado', /a mano/.test(cot._notas['1,23'] || ''), true);
 }
 
 console.log('\n════ 6) LIMPIEZA de miniaturas huérfanas ════');
@@ -542,18 +542,42 @@ console.log('\n════ 9) Migración desde el esquema actual, con una colum
   check('antes: 24 columnas (23 + la del usuario)', cot.getLastColumn(), 24);
   Hoja.inicializar();
   check('después: 25 columnas', cot.getLastColumn(), 25);
-  check('Precio real/u insertada en la 22', cot._g[0][21], 'Precio real/u');
+  check('Precio real/u insertada en la 23', cot._g[0][22], 'Precio real/u');
   check('la columna del usuario sobrevive, desplazada', cot._g[0][24], 'Mis notas');
   check('y su dato también', cot._g[1][24], 'entregado al cliente');
   check('Precio venta intacto', cot._g[1][20], 17143);
-  check('Precio real nace vacío', cot._g[1][21], '');
-  check('Total venta desplazado', cot._g[1][22], 17143);
+  check('Total venta no se movió', cot._g[1][21], 17143);
+  check('Precio real nace vacío', cot._g[1][22], '');
   check('Fecha desplazada', cot._g[1][23], 'FECHA');
   check('avisó de una sola inserción', /insertadas 1 columna/.test(avisos.join(' ')), true);
   check('sin renombrados', /renombradas/.test(avisos.join(' ')), false);
 }
 
-console.log(`
-═══ ${ok} OK · ${mal} fallos ═══
-`);
+console.log('\n════ 10) La migración detecta una columna en la posición equivocada ════');
+{
+  // Esquema completo pero con Precio real/u donde estaba antes (tras Precio venta/u)
+  const MAL = ['ID', 'Miniatura', 'Nombre de la pieza', 'Impresora', 'Multicolor',
+    'Tiempo impresión', 'Filamento (g)', 'Ancho (mm)', 'Largo (mm)', 'Alto (mm)', 'Piezas en cama',
+    'kWh total', 'Costo filamento', 'Costo energía', 'Subtotal', 'Mantenimiento',
+    'Total costo (cama)', 'Costo impresión/u', 'Insumos/u', 'Costo total/u', 'Precio venta/u',
+    'Precio real/u', 'Total venta (cama)', 'Fecha'];
+  const FILA = [1, '', 'pieza', 'Creality HI', 'No', '3h 07m', 62.36, 10, 20, 30, 1,
+    0.589, 4989, 454, 5442, 272, 5714, 5714, 0, 5714, 17143, '', 17143, 'FECHA'];
+
+  const cot = crearHoja('Cotizaciones');
+  cot._g.push(MAL.slice(), FILA.slice());
+  const ss = crearSS({ Cotizaciones: cot });
+  const { Hoja } = cargar(ss);
+
+  const antes = JSON.stringify(cot._g);
+  let err = null;
+  try { Hoja.inicializar(); } catch (e) { err = e.message; }
+  check('lanza en vez de escribir corrido', err !== null, true);
+  check('señala la posición y qué se esperaba', /posición 22 hay .Precio real\/u. y se esperaba .Total venta \(cama\)./.test(err || ''), true);
+  check('no sugiere borrar una columna con datos', /bórrala/.test(err || ''), false);
+  check('pide reordenar según el esquema', /Reordena la fila 1/.test(err || ''), true);
+  check('no tocó nada de la hoja', JSON.stringify(cot._g), antes);
+}
+
+console.log(`\n═══ ${ok} OK · ${mal} fallos ═══\n`);
 process.exit(mal ? 1 : 0);

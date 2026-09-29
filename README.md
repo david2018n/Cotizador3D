@@ -136,7 +136,7 @@ replica esta misma cadena, de modo que el preview y lo que termina en la hoja co
 
 ### `Precio real/u` — la única columna que se llena a mano
 
-Va justo después de `Precio venta/u` y guarda el valor al que **de verdad** se vendió la
+Va justo después de `Total venta (cama)`, al final de la fila, y guarda el valor al que **de verdad** se vendió la
 unidad, cuando no es el sugerido: por acuerdo con el cliente, o porque la pieza vale más en
 el mercado de lo que da el cálculo.
 
@@ -146,7 +146,7 @@ todavía no hay precio acordado.
 
 Se distingue a la vista: encabezado ámbar en vez del verde de los totales calculados, celdas
 con fondo crema aunque estén vacías, y una nota en el encabezado que explica para qué es.
-Lleva formato de moneda como el resto del bloque de dinero.
+Lleva formato de moneda como el resto de las columnas de dinero.
 
 ### Migración del esquema de Cotizaciones
 
