@@ -166,162 +166,108 @@ function procesarArchivo(file) {
     mostrarAlerta("El archivo no es un G-code válido.", "error"); return;
   }
   document.getElementById("nombrePieza").value = file.name.replace(/\.[^.]+$/, "");
+  mostrarAlerta(`Leyendo ${_tamanoLegible(file.size)} de G-code…`, "warning");
 
-  let textoHead = "", textoTail = "", textoFull = "", pendientes = 3;
-  const intentarParsear = () => {
-    if (--pendientes === 0) parsearGcode(textoHead, textoTail, textoFull);
-  };
-  const leer = (blob, cb) => {
-    const r = new FileReader();
-    r.onload = e => { cb(e.target.result); intentarParsear(); };
-    r.readAsText(blob);
-  };
-
-  leer(file.slice(0, 307200),                       t => textoHead = t);
-  leer(file.slice(Math.max(0, file.size - 30720)),  t => textoTail = t);
-  leer(file,                                        t => textoFull = t);
+  // Se lee el archivo completo: los totales y el modelo de impresora están al
+  // final, detrás de un bloque de configuración que crece con cada perfil de
+  // filamento, así que cualquier ventana fija se queda corta tarde o temprano.
+  const lector = new FileReader();
+  lector.onload  = e => aplicarGcode(e.target.result);
+  lector.onerror = () => mostrarAlerta("No se pudo leer el archivo.", "error");
+  lector.readAsText(file);
 }
 
-function parsearGcode(textoHead, textoTail, textoFull) {
-  const lineasHead = textoHead.split("\n");
-  _thumbnailBase64 = null;
-  let encontrados = [];
+function _tamanoLegible(bytes) {
+  return bytes >= 1048576
+    ? (bytes / 1048576).toFixed(1) + " MB"
+    : Math.round(bytes / 1024) + " KB";
+}
 
-  _extraerThumbnail(lineasHead);
-  _extraerTiempo(lineasHead, textoTail, encontrados);
-  _extraerObjetos(textoFull, encontrados);
-  _extraerMulticolor(textoFull);
-  _extraerDatosHeader(lineasHead, textoTail, encontrados);
+// Lleva al formulario lo que devolvió el parser
+function aplicarGcode(texto) {
+  const d = Gcode.parsear(texto);
 
-  const faltaFil = !encontrados.includes("filamento");
-  mostrarAlerta(
-    faltaFil
-      ? "✅ Datos extraídos. ⚠️ Ingresa el peso del filamento manualmente."
-      : "✅ Todos los datos extraídos automáticamente.",
-    faltaFil ? "warning" : "success"
-  );
+  _thumbnailBase64 = d.thumbnailBase64;
+  _multicolor      = d.multicolor.es;
+
+  _pintarLaminador(d.laminador);
+  _pintarMiniatura(d.thumbnailBase64);
+  _pintarMulticolor(d.multicolor);
+
+  if (d.tiempoTexto) document.getElementById("tiempoTexto").value     = d.tiempoTexto;
+  if (d.gramos)      document.getElementById("filamentoGramos").value = d.gramos.toFixed(2);
+  if (d.impresora)   document.getElementById("impresora").value       = d.impresora;
+
+  if (d.dimensiones) {
+    const poner = (id, v) => {
+      if (v !== null && v !== undefined && !isNaN(v)) {
+        document.getElementById(id).value = v.toFixed(1);
+      }
+    };
+    poner("anchoMm", d.dimensiones.x);
+    poner("largoMm", d.dimensiones.y);
+    poner("altoMm",  d.dimensiones.z);
+  }
+
+  if (d.objetos.length) {
+    const esEnsamble = d.objetos.length > 1;
+    document.getElementById("unidadesPorCama").value = esEnsamble ? 1 : d.objetos[0].copias;
+    _actualizarHintUnidades(d.objetos, esEnsamble);
+  }
+
+  _avisarResultado(d);
   actualizarPreview();
 }
 
-function _extraerThumbnail(lineas) {
-  const bloques = [];
-  let activo = false, tam = 0, chunks = [];
-  lineas.forEach(l => {
-    const mIni = l.match(/^;\s*thumbnail begin\s+(\d+)x(\d+)/i);
-    if (mIni) { activo = true; tam = parseInt(mIni[1]) * parseInt(mIni[2]); chunks = []; return; }
-    if (activo && /^;\s*thumbnail end/i.test(l)) { bloques.push({ tam, b64: chunks.join("") }); activo = false; return; }
-    if (activo) chunks.push(l.replace(/^;\s*/, "").trim());
-  });
-  if (bloques.length === 0) return;
-  bloques.sort((a, b) => b.tam - a.tam);
-  _thumbnailBase64 = bloques[0].b64;
-  document.getElementById("thumbnail-img").src = "data:image/png;base64," + _thumbnailBase64;
-  document.getElementById("thumbnail-wrap").style.display = "flex";
+function _pintarLaminador(laminador) {
+  const badge = document.getElementById("badgeLaminador");
+  const reconocido = laminador.clave !== "desconocido";
+  badge.textContent      = reconocido ? `${laminador.nombre} ${laminador.version}` : "No reconocido";
+  badge.style.background = reconocido ? "#e8f4ff" : "#fff3cd";
+  badge.style.color      = reconocido ? "#004085" : "#856404";
 }
 
-function _extraerTiempo(lineasHead, textoTail, encontrados) {
-  // Fuente principal: "estimated printing time (normal mode)" en el tail.
-  // Formato CP7: "1d 7h 45m 35s" o "19h 8m 34s"
-  const lineasTail = textoTail.split("\n");
-  for (const l of lineasTail) {
-    const m = l.match(/^;\s*estimated printing time\s*\(normal mode\)\s*=\s*(.+)/i);
-    if (m) {
-      document.getElementById("tiempoTexto").value = m[1].trim();
-      encontrados.push("tiempo");
-      return;
-    }
-  }
-  // Fallback: TIME_ELAPSED acumulado (menos preciso)
-  let maxTime = 0;
-  lineasTail.forEach(l => {
-    const m = l.match(/^;TIME_ELAPSED:([\d.]+)/);
-    if (m) { const v = parseFloat(m[1]); if (v > maxTime) maxTime = v; }
-  });
-  if (maxTime > 0) {
-    document.getElementById("tiempoTexto").value = _segundosATexto(maxTime);
-    encontrados.push("tiempo");
-  }
+function _pintarMiniatura(base64) {
+  const envoltorio = document.getElementById("thumbnail-wrap");
+  if (!base64) { envoltorio.style.display = "none"; return; }
+  document.getElementById("thumbnail-img").src = "data:image/png;base64," + base64;
+  envoltorio.style.display = "flex";
 }
 
-function _extraerObjetos(textoFull, encontrados) {
-  const idsPerObj = {};
-  textoFull.split("\n").forEach(l => {
-    const m = l.match(/^; printing object (.+?) id:(\d+)/);
-    if (!m) return;
-    const [, nombre, id] = m;
-    if (!idsPerObj[nombre]) idsPerObj[nombre] = new Set();
-    idsPerObj[nombre].add(id);
-  });
-  const objetos = Object.entries(idsPerObj).map(([nombre, ids]) => ({ nombre, copias: ids.size }));
-  if (objetos.length === 0) return;
-  const esEnsamble = objetos.length > 1;
-  document.getElementById("unidadesPorCama").value = esEnsamble ? 1 : objetos[0].copias;
-  _actualizarHintUnidades(objetos, esEnsamble);
-  encontrados.push("unidades");
-}
-
-function _extraerMulticolor(textoFull) {
-  const tools = new Set((textoFull.match(/^T(\d+)$/gm) || []).map(t => parseInt(t.slice(1))));
-  _multicolor = tools.size > 1;
+function _pintarMulticolor(multicolor) {
   const badge = document.getElementById("badgeMulticolor");
-  badge.textContent      = _multicolor ? "🎨 Multicolor" : "Un color";
-  badge.style.background = _multicolor ? "#cce5ff" : "#e0e0e0";
-  badge.style.color      = _multicolor ? "#004085" : "#666";
+  badge.textContent      = multicolor.es ? "🎨 Multicolor" : "Un color";
+  badge.title            = multicolor.razon;   // por qué lo decidió así
+  badge.style.background = multicolor.es ? "#cce5ff" : "#e0e0e0";
+  badge.style.color      = multicolor.es ? "#004085" : "#666";
 }
 
-function _extraerDatosHeader(lineas, textoTail, encontrados) {
-  let minX=null, maxX=null, minY=null, maxY=null, minZ=null, maxZ=null;
-  const lineasTail = textoTail.split("\n"); // definido aquí para que esté disponible en todo el scope
-  lineas.forEach(l => {
-    const mImp = l.match(/^;\s*printer_model\s*=\s*(.+)/i);
-    if (mImp) {
-      const raw = mImp[1].trim().toLowerCase();
-      const sel = document.getElementById("impresora");
-      if      (raw.includes("ender") && raw.includes("s1")) sel.value = "Ender 3 S1 Pro";
-      else if (raw.includes("creality") && raw.includes("hi")) sel.value = "Creality HI";
-      encontrados.push("impresora");
-    }
-    const mns = [
-      [/^;\s*MINX\s*=\s*([\d.]+)/i, v => minX = v],
-      [/^;\s*MAXX\s*=\s*([\d.]+)/i, v => maxX = v],
-      [/^;\s*MINY\s*=\s*([\d.]+)/i, v => minY = v],
-      [/^;\s*MAXY\s*=\s*([\d.]+)/i, v => maxY = v],
-      [/^;\s*MINZ\s*=\s*([\d.]+)/i, v => minZ = v],
-      [/^;\s*MAXZ\s*=\s*([\d.]+)/i, v => maxZ = v],
-    ];
-    mns.forEach(([re, fn]) => { const m = l.match(re); if (m) fn(parseFloat(m[1])); });
-  });
-
-  // Filamento [g] vive en el CONFIG_BLOCK al final del archivo (tail).
-  // Puede ser mono-filamento: "; filament used [g] = 498.68"
-  // o multi-carrete CFS:     "; filament used [g] = 0.00, 386.30, 112.38, 0.00"
-  // Tomamos la primera ocurrencia de [g] y sumamos todos los valores.
-  if (!encontrados.includes("filamento")) {
-    for (const l of lineasTail) {
-      const mFil = l.match(/^;\s*filament\s+used\s*\[g\]\s*=\s*(.+)/i);
-      if (mFil) {
-        const valores = mFil[1].split(",").map(v => parseFloat(v.trim())).filter(v => !isNaN(v));
-        const totalG  = valores.reduce((s, v) => s + v, 0);
-        if (totalG > 0) {
-          document.getElementById("filamentoGramos").value = totalG.toFixed(2);
-          encontrados.push("filamento");
-        }
-        break; // con la primera línea [g] es suficiente
-      }
-    }
+// Un único mensaje: laminador detectado y qué campos hay que revisar
+function _avisarResultado(d) {
+  if (d.laminador.clave === "desconocido") {
+    mostrarAlerta(
+      "⚠️ No reconocí el laminador. Se leyó lo que se pudo: revisa los campos antes de guardar.",
+      "warning"
+    );
+    return;
   }
 
-  // Nota: el G-code también trae "; total filament cost", el costo que calcula
-  // el laminador con su propio precio de filamento. No se usa: el spec define
-  // el costo como gramos × tarifa, y la tarifa vive en la hoja "Parámetros".
-  if (maxX !== null && minX !== null) {
-    document.getElementById("anchoMm").value = (maxX - minX).toFixed(1);
-    document.getElementById("largoMm").value = (maxY - minY).toFixed(1);
-    document.getElementById("altoMm").value  = (maxZ - minZ).toFixed(1);
-    encontrados.push("dims");
-  }
+  const ETIQUETAS = {
+    tiempo:      "el tiempo",
+    filamento:   "los gramos de filamento",
+    impresora:   "la impresora",
+    dimensiones: "las dimensiones",
+    unidades:    "las piezas en cama"
+  };
+  const faltan = d.faltantes.map(f => ETIQUETAS[f] || f);
+
+  mostrarAlerta(
+    faltan.length
+      ? `⚠️ ${d.laminador.nombre}: revisa a mano ${faltan.join(", ")}.`
+      : `✅ ${d.laminador.nombre}: todos los datos extraídos automáticamente.`,
+    faltan.length ? "warning" : "success"
+  );
 }
-
 // ============================================================
 //  HINT UNIDADES
 // ============================================================
@@ -358,7 +304,7 @@ document.getElementById("impresora").addEventListener("change", actualizarPrevie
 
 function actualizarPreview() {
   const gramos    = parseFloat(document.getElementById("filamentoGramos").value);
-  const tiempoH   = _parsearTiempoAHoras(document.getElementById("tiempoTexto").value);
+  const tiempoH   = Gcode.horasDesdeTexto(document.getElementById("tiempoTexto").value);
   const impresora = document.getElementById("impresora").value;
   const unidades  = parseInt(document.getElementById("unidadesPorCama").value) || 1;
 
@@ -434,7 +380,7 @@ function guardar() {
   const datos = {
     nombrePieza:     document.getElementById("nombrePieza").value.trim(),
     impresora:       document.getElementById("impresora").value,
-    tiempoHoras:     _parsearTiempoAHoras(document.getElementById("tiempoTexto").value),
+    tiempoHoras:     Gcode.horasDesdeTexto(document.getElementById("tiempoTexto").value),
     filamentoGramos: parseFloat(document.getElementById("filamentoGramos").value),
     anchoMm:         parseFloat(document.getElementById("anchoMm").value)  || null,
     largoMm:         parseFloat(document.getElementById("largoMm").value)  || null,
@@ -487,10 +433,13 @@ function limpiarFormulario() {
   _multicolor        = false;
   _insumos           = [];
   _renderizarInsumos();
-  const badge = document.getElementById("badgeMulticolor");
-  badge.textContent = "Carga un G-code";
-  badge.style.background = "#e0e0e0";
-  badge.style.color      = "#666";
+  ["badgeMulticolor", "badgeLaminador"].forEach(id => {
+    const badge = document.getElementById(id);
+    badge.textContent      = "Carga un G-code";
+    badge.title            = "";
+    badge.style.background = "#e0e0e0";
+    badge.style.color      = "#666";
+  });
 }
 
 function mostrarAlerta(msg, tipo) {
@@ -504,24 +453,4 @@ function _formatearNumero(n) {
   return Number(Number(n).toFixed(2)).toLocaleString("es-CO");
 }
 
-// Se redondea a minutos antes de partir, o 3599 s saldría como "0h 60m"
-function _segundosATexto(seg) {
-  const totalMin = Math.round(seg / 60);
-  const h = Math.floor(totalMin / 60);
-  const m = totalMin % 60;
-  return `${h}h ${m.toString().padStart(2, "0")}m`;
-}
-
-function _parsearTiempoAHoras(texto) {
-  // Soporta formato CP7: "1d 7h 45m 35s" o "19h 8m 34s" o "7h 30m"
-  if (!texto) return 0;
-  const mD = texto.match(/(\d+)\s*d/i);
-  const mH = texto.match(/(\d+)\s*h/i);
-  const mM = texto.match(/(\d+)\s*m/i);
-  const mS = texto.match(/(\d+)\s*s/i);
-  return (mD ? parseInt(mD[1]) * 24 : 0)
-       + (mH ? parseInt(mH[1]) : 0)
-       + (mM ? parseInt(mM[1]) : 0) / 60
-       + (mS ? parseInt(mS[1]) : 0) / 3600;
-}
 </script>

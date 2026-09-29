@@ -17,3 +17,7 @@ desktop.ini
 *.tmp
 /tmp/
 /gcode-pruebas/
+
+# G-codes de referencia: pesan decenas de MB cada uno. Los recortes
+# versionados para las pruebas viven en docs/fixtures/.
+docs/*.gcode

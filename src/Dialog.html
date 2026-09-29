@@ -29,6 +29,12 @@
 
   <div class="alert" id="alertBox"></div>
 
+  <!-- Laminador detectado a partir del propio G-code -->
+  <div id="laminador-wrap">
+    <span class="field-label">Laminador</span>
+    <span id="badgeLaminador" class="badge">Carga un G-code</span>
+  </div>
+
   <!-- Formulario principal -->
   <div class="form-grid">
 
@@ -136,6 +142,7 @@
     <button class="btn-primary" id="btnGuardar" onclick="guardar()" disabled>Guardar en hoja</button>
   </div>
 
+  <?!= include('Gcode') ?>
   <?!= include('Script') ?>
 
 </body>
